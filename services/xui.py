@@ -33,46 +33,36 @@ class XUIClient:
 
     async def login(self) -> bool:
         """
-        Универсальная адаптивная авторизация в API MHSanaei 3.4.2.
-        Сначала получает базовые куки через GET, затем пробует JSON и Form-Data.
+        Авторизация в API MHSanaei 3.4.2.
+        POST-запрос отправляется строго на кастомный путь со слэшем на конце!
         """
         if not config.ENABLE_XUI or not self.full_url:
             logger.warning("Интеграция с 3x-ui отключена или не настроена.")
             return False
 
-        login_url = "login"
+        # Использование "./" заставляет httpx сохранить финальный слэш из base_url
+        # Запрос уйдет ровно на: https://188.120.234
+        login_url = "./"
+        
         payload = {
             "username": self.username,
             "password": self.password
         }
         
         try:
-            # Шаг 1: Делаем GET-запрос, чтобы инициализировать сессию и забрать куки панели
-            try:
-                await self.client.get("")
-            except Exception as e:
-                logger.warning(f"Не удалось выполнить предварительный GET-запрос: {e}")
-
-            # Шаг 2: Попытка авторизации через JSON (стандарт для 3.x)
-            logger.info(f"Отправляю JSON-авторизацию на {self.full_url}{login_url}...")
+            # Отправляем строго как JSON-тело
             response = await self.client.post(login_url, json=payload)
             
-            # Шаг 3: Если получили 403/405, пробуем альтернативный Form-Data (стандарт для старых веток)
-            if response.status_code in [403, 405]:
-                logger.info(f"JSON-авторизация вернула {response.status_code}. Пробую альтернативный Form-Data...")
-                # Удаляем заголовок Content-Type, чтобы httpx сам выставил application/x-www-form-urlencoded
+            # Если панель на данном эндпоинте все же просит Form-Data
+            if response.status_code in:
+                logger.info("JSON-авторизация отклонена. Пробую Form-Data на корень...")
                 if "Content-Type" in self.client.headers:
                     del self.client.headers["Content-Type"]
                 response = await self.client.post(login_url, data=payload)
-                # Возвращаем заголовок назад для последующих API запросов
                 self.client.headers["Content-Type"] = "application/json"
-
-            # Анализируем финальный HTTP-статус
+            
             if response.status_code != 200:
-                logger.error(
-                    f"Панель отклонила запрос. Статус HTTP: {response.status_code}. "
-                    f"ВНИМАНИЕ: Проверьте правильность XUI_USER и XUI_PASSWORD в файле .env!"
-                )
+                logger.error(f"Ошибка авторизации 3x-ui. Статус HTTP: {response.status_code}. Проверьте правильность логина/пароля в .env!")
                 return False
                 
             resp_json = response.json()
@@ -80,12 +70,13 @@ class XUIClient:
                 logger.info("Успешная авторизация в панели 3x-ui!")
                 return True
             else:
-                logger.error(f"Панель вернула ошибку авторизации в теле ответа: {resp_json.get('msg')}")
+                logger.error(f"Панель вернула ошибку авторизации: {resp_json.get('msg')}")
                 return False
                 
         except Exception as e:
             logger.error(f"Исключение при попытке авторизации в 3x-ui: {e}")
             return False
+
 
 
     async def _request(self, method: str, path: str, **kwargs) -> Optional[Dict[str, Any]]:
