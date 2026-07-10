@@ -56,7 +56,7 @@ async def cb_menu_stats(callback: CallbackQuery, db_session: AsyncSession):
 
 @admin_router.callback_query(F.data == "adm_xui_inbounds")
 async def cb_adm_xui_inbounds(callback: CallbackQuery, db_session: AsyncSession):
-    """Выводит список ВСЕХ инбаундов из 3x-ui панели с их текущим тарифом"""
+    """Выводит список ВСЕХ инбаундов из 3x-ui панели с их текущим тарифом (Безопасная callback_data)"""
     if callback.from_user.id not in config.ADMIN_IDS: return
 
     # Подгружаем из API 3x-ui все инбаунды
@@ -69,53 +69,74 @@ async def cb_adm_xui_inbounds(callback: CallbackQuery, db_session: AsyncSession)
     res = await db_session.execute(select(TariffInbound))
     db_inbounds = {i.inbound_id: i.plan_type for i in res.scalars().all()}
 
-    text = "⚙️ <b>Настройка распределения протоколов 3x-ui</b>\n\nКликните по инбаунду, чтобы изменить его тарифный план. Пользователи получат ключи от ВСЕХ инбаундов, включенных в их тариф!\n\n"
+    text = (
+        "⚙️ <b>Настройка распределения протоколов 3x-ui</b>\n\n"
+        "Кликните по инбаунду, чтобы изменить его тарифный план. "
+        "Пользователи получатель ключи от ВСЕХ инбаундов, включенных в их тариф!\n\n"
+    )
     buttons = []
 
     for ib in all_inbounds:
         ib_id = ib["id"]
         current_plan = db_inbounds.get(ib_id, "❌ ОТКЛЮЧЕН")
         
-        # Красивый статус для кнопки
+        # Красивый статус для текста кнопки
         plan_badge = "🟢 BASE" if current_plan == "base" else "💎 PREMIUM" if current_plan == "premium" else "⚪️ НЕАКТИВЕН"
         btn_text = f"[{ib_id}] {ib['protocol'].upper()} ({ib['remark']}) -> {plan_badge}"
         
-        # При клике циклически меняем тариф: none -> base -> premium -> none
-        buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"adm_toggle_ib_{ib_id}_{ib['protocol']}_{ib['port']}_{ib['remark'][:15]}")] )
+        # Передаем в callback СТРОГО только ID инбаунда. Строка гарантированно весит до 25 байт.
+        buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"adm_tg_ib_{ib_id}")])
 
     buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_stats")])
     await callback.message.edit_text(text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
-@admin_router.callback_query(F.data.startswith("adm_toggle_ib_"))
+@admin_router.callback_query(F.data.startswith("adm_tg_ib_"))
 async def cb_adm_toggle_ib(callback: CallbackQuery, db_session: AsyncSession):
-    """Циклическое переключение тарифа для инбаунда"""
+    """Циклическое переключение тарифа для инбаунда с получением данных внутри Python"""
     if callback.from_user.id not in config.ADMIN_IDS: return
     
-    # Парсим: adm_toggle_ib_{id}_{protocol}_{port}_{remark}
-    parts = callback.data.split("_")
-    ib_id = int(parts[3])
-    protocol = parts[4]
-    port = int(parts[5])
-    remark = parts[6]
+    # Извлекаем только ID инбаунда
+    ib_id = int(callback.data.split("_")[-1])
+
+    # Запрашиваем актуальный список инбаундов, чтобы вытащить параметры протокола прямо на сервере
+    all_inbounds = await xui_client.get_inbounds()
+    target_inbound = next((ib for ib in all_inbounds if ib["id"] == ib_id), None) if all_inbounds else None
+    
+    if not target_inbound:
+        await callback.answer("❌ Этот инбаунд больше не существует в панели 3x-ui!", show_alert=True)
+        return
+
+    protocol = target_inbound["protocol"]
+    port = target_inbound["port"]
+    remark = target_inbound["remark"]
 
     # Ищем инбаунд в нашей БД
     res = await db_session.execute(select(TariffInbound).where(TariffInbound.inbound_id == ib_id))
     ib_record = res.scalar_one_or_none()
 
     if not ib_record:
-        # Если не было — ставим BASE
-        new_record = TariffInbound(inbound_id=ib_id, plan_type=SubscriptionType.BASE, protocol_name=protocol, port=port, remark=remark)
+        # Если записи не было — ставим BASE тариф
+        new_record = TariffInbound(
+            inbound_id=ib_id, 
+            plan_type=SubscriptionType.BASE, 
+            protocol_name=protocol, 
+            port=port, 
+            remark=remark
+        )
         db_session.add(new_record)
     elif ib_record.plan_type == SubscriptionType.BASE:
-        # Если был BASE — повышаем до PREMIUM
+        # Если был BASE — переключаем на PREMIUM
         ib_record.plan_type = SubscriptionType.PREMIUM
     else:
-        # Если был PREMIUM — удаляем привязку (отключаем)
+        # Если был PREMIUM — полностью отключаем (удаляем привязку)
         await db_session.delete(ib_record)
 
     await db_session.commit()
-    # Мгновенно обновляем меню
+    await callback.answer("✨ Изменения сохранены!")
+    
+    # Мгновенно обновляем интерфейс админки
     await cb_adm_xui_inbounds(callback, db_session)
+
 
 @admin_router.message(Command("manage"))
 async def cmd_manage_user(message: Message, db_session: AsyncSession):
