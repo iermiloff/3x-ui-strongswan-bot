@@ -6,6 +6,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.services.link_generator import generate_xui_link
 from bot.config import config
 from bot.database.models import User, SubscriptionType, ProtocolType, VPNKey
 from bot.database.crud import check_free_trial_availability, update_free_trial_timestamp, create_subscription
@@ -93,7 +94,7 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
             
             if client_uuid:
                 # Базовая строка конфигурации
-                config_link = f"{protocol}://{client_uuid}@ваша_нода.com:{target_inbound['port']}?remark=Trial_{protocol}"
+                config_link = generate_xui_link(target_inbound, client_uuid, email)
                 
                 vpn_key = VPNKey(
                     subscription_id=sub.id,
@@ -457,7 +458,7 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
                 client_uuid = await xui_client.add_client(inbound_id=inbound_id, email=email)
                 
                 if client_uuid:
-                    config_link = f"{protocol}://{client_uuid}@ваша_нода.com:{target_inbound['port']}?remark=VPN_{protocol.upper()}"
+                    config_link = generate_xui_link(target_inbound, client_uuid, email)
                     
                     vpn_key = VPNKey(
                         subscription_id=sub.id,
