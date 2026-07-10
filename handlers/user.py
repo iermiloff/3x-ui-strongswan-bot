@@ -450,29 +450,64 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
     # 2. Активируем/продлеваем подписку в БД
     sub = await create_subscription(db_session, pay_user_id, plan_type, duration_days)
     
+import asyncio
+
     issued_keys_text = []
     
-    # 3. ГЕНЕРАЦИЯ ДЛЯ 3X-UI
-    # НОВАЯ МУЛЬТИ-ПРОТОКОЛЬНАЯ ВЫДАЧА 3X-UI
+    # Загружаем уже существующие ключи для этой подписки, если это было ПРОДЛЕНИЕ
+    stmt_keys = select(VPNKey).where(VPNKey.subscription_id == sub.id)
+    existing_keys_res = await db_session.execute(stmt_keys)
+    existing_keys = {k.inbound_id: k for k in existing_keys_res.scalars().all() if k.protocol_category == ProtocolType.XUI}
+    existing_ikev2 = next((k for k in existing_keys_res.scalars().all() if k.protocol_category == ProtocolType.IKEV2), None)
+
+    # 1. БЕЗОПАСНАЯ МУЛЬТИ-ГЕНЕРАЦИЯ ДЛЯ 3X-UI
     if config.ENABLE_XUI:
         try:
-            # Находим в БД ВСЕ инбаунды, которые админ привязал к текущему тарифу
-            # Для триала жестко ищем SubscriptionType.BASE, для оплаты — plan_type
             target_plan = SubscriptionType.BASE if "trial" in callback.data else plan_type
-            
             res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == target_plan))
             active_tariff_inbounds = res.scalars().all()
 
             for ib in active_tariff_inbounds:
-                # Запрашиваем актуальный streamSettings для каждого инбаунда из панели
-                target_inbound = await xui_client.get_inbound_info(ib.inbound_id)
-                if target_inbound:
-                    email = f"user_{pay_user_id}_{uuid.uuid4().hex[:4]}"
-                    client_uuid = await xui_client.add_client(inbound_id=ib.inbound_id, email=email)
-                    
-                    if client_uuid:
-                        config_link = generate_xui_link(target_inbound, client_uuid, email)
-                        
+                # ЗАЩИТА: Если инбаунд удален из панели, get_inbound_info вернет None
+                # Обертываем в таймаут 5 секунд, чтобы бот не завис при сбое сети панели
+                try:
+                    target_inbound = await asyncio.wait_for(xui_client.get_inbound_info(ib.inbound_id), timeout=5.0)
+                except asyncio.TimeoutError:
+                    logger.error(f"Таймаут запроса к 3x-ui для инбаунда {ib.inbound_id}")
+                    continue
+
+                if not target_inbound:
+                    logger.warning(f"Инбаунд {ib.inbound_id} отсутствует в панели 3x-ui. Пропускаю.")
+                    continue
+
+                # ПРОВЕРКА НА ПРОДЛЕНИЕ: Если ключ для этого инбаунда уже выдан ранее
+                if ib.inbound_id in existing_keys:
+                    old_key = existing_keys[ib.inbound_id]
+                    # Просто включаем его обратно в панели (если он был отключен за просрочку)
+                    try:
+                        await asyncio.wait_for(
+                            xui_client.set_client_status(inbound_id=ib.inbound_id, client_uuid=old_key.client_uuid, enable=True),
+                            timeout=5.0
+                        )
+                    except asyncio.TimeoutError:
+                        pass
+                    issued_keys_text.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}) [Продлен]:</b>\n<code>{old_key.config_data}</code>")
+                    continue
+
+                # Если это НОВАЯ покупка для данного инбаунда — генерируем с нуля
+                email = f"user_{pay_user_id}_{uuid.uuid4().hex[:4]}"
+                try:
+                    client_uuid = await asyncio.wait_for(
+                        xui_client.add_client(inbound_id=ib.inbound_id, email=email),
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(f"Таймаут добавления клиента в 3x-ui для инбаунда {ib.inbound_id}")
+                    continue
+                
+                if client_uuid:
+                    config_link = generate_xui_link(target_inbound, client_uuid, email)
+                    if config_link:
                         vpn_key = VPNKey(
                             subscription_id=sub.id,
                             protocol_category=ProtocolType.XUI,
@@ -484,35 +519,63 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
                         db_session.add(vpn_key)
                         issued_keys_text.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
         except Exception as e:
-            logger.error(f"Ошибка мульти-генерации XUI: {e}")
+            logger.error(f"Ошибка мульти-генерации XUI при оплате: {e}")
 
-
-    # 4. ГЕНЕРАЦИЯ ДЛЯ STRONGSWAN
+    # 2. БЕЗОПАСНАЯ ГЕНЕРАЦИЯ ДЛЯ STRONGSWAN (IKEv2)
     if plan_type == SubscriptionType.PREMIUM and config.ENABLE_STRONGSWAN:
         try:
             login = f"user_{pay_user_id}"
-            password = uuid.uuid4().hex[:12]
             
-            success = await strongswan_client.add_user(login=login, password=password)
-            if success:
-                vpn_key = VPNKey(
-                    subscription_id=sub.id,
-                    protocol_category=ProtocolType.IKEV2,
-                    protocol_name="IKEv2",
-                    client_uuid=login,
-                    config_data=f"{login}:{password}"
-                )
-                db_session.add(vpn_key)
+            # ПРОВЕРКА НА ПРОДЛЕНИЕ STRONGSWAN:
+            if existing_ikev2:
+                # Извлекаем старый пароль
+                _, password = existing_ikev2.config_data.split(":", 1)
+                # Просто активируем существующий файл конфигурации обратно (.disabled -> .conf)
+                try:
+                    await asyncio.wait_for(
+                        strongswan_client.set_user_status(login=login, password=password, enable=True),
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("Таймаут активации аккаунта StrongSwan")
+                
                 issued_keys_text.append(
-                    f"🔐 <b>Выделенный Premium IKEv2 (iOS/macOS):</b>\n"
+                    f"🔐 <b>Выделенный Premium IKEv2 (iOS/macOS) [Продлен]:</b>\n"
                     f"• Сервер: <code>{config.SSH_HOST}</code>\n"
                     f"• Логин: <code>{login}</code>\n"
                     f"• Пароль: <code>{password}</code>"
                 )
+            else:
+                # Если это первая покупка Премиума — генерируем новый аккаунт
+                password = uuid.uuid4().hex[:12]
+                try:
+                    success = await asyncio.wait_for(
+                        strongswan_client.add_user(login=login, password=password),
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("Таймаут создания аккаунта StrongSwan по SSH")
+                    success = False
+
+                if success:
+                    vpn_key = VPNKey(
+                        subscription_id=sub.id,
+                        protocol_category=ProtocolType.IKEV2,
+                        protocol_name="IKEv2",
+                        client_uuid=login,
+                        config_data=f"{login}:{password}"
+                    )
+                    db_session.add(vpn_key)
+                    issued_keys_text.append(
+                        f"🔐 <b>Выделенный Premium IKEv2 (iOS/macOS):</b>\n"
+                        f"• Сервер: <code>{config.SSH_HOST}</code>\n"
+                        f"• Логин: <code>{login}</code>\n"
+                        f"• Пароль: <code>{password}</code>"
+                    )
         except Exception as e:
             logger.error(f"Ошибка генерации StrongSwan при оплате: {e}")
 
-    # Жестко пушим изменения в PostgreSQL перед отправкой сообщения
+    # Фиксируем изменения в базе данных
     await db_session.commit()
     
     # 5. СНИМАЕМ БЛОКИРОВКУ И ВЫВОДИМ РЕЗУЛЬТАТ
