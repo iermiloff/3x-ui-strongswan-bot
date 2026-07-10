@@ -15,14 +15,13 @@ class XUIClient:
             url_str += '/'
         self.full_url = url_str
         
-        # Теперь здесь хранится ваш API Токен из панели
         self.api_token = config.XUI_PASSWORD.get_secret_value() if config.XUI_PASSWORD else ""
         
-        # Настраиваем авторизацию через Bearer-токен строго по спецификации OpenAPI
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept": "application/json",
-            "Authorization": f"Bearer {self.api_token}"
+            "Authorization": f"Bearer {self.api_token}",
+            "Content-Type": "application/json"
         }
         
         self.client = httpx.AsyncClient(
@@ -34,7 +33,6 @@ class XUIClient:
         )
 
     async def login(self) -> bool:
-        """Метод-заглушка. При Bearer-авторизации логин не требуется, токен активен всегда"""
         return True
 
     async def _request(self, method: str, path: str, **kwargs) -> Optional[Dict[str, Any]]:
@@ -42,7 +40,7 @@ class XUIClient:
         try:
             response = await self.client.request(method, url, **kwargs)
             if response.status_code != 200:
-                logger.error(f"Ошибка API запроса к {url}. Статус HTTP: {response.status_code}. Проверьте токен в .env!")
+                logger.error(f"Ошибка API запроса к {url}. Статус HTTP: {response.status_code}.")
                 return None
             return response.json()
         except Exception as e:
@@ -50,42 +48,39 @@ class XUIClient:
             return None
 
     async def add_client(self, inbound_id: int, email: str, limit_ip: int = 2) -> Optional[str]:
-        path = "panel/api/inbounds/addClient"
-        client_id = str(uuid.uuid4())
-        client_settings = {
-            "id": client_id,
-            "alterId": 0,
-            "email": email,
-            "totalGB": 0,
-            "expiryTime": 0,
-            "enable": True,
-            "tgId": "",
-            "subId": "",
-            "limitIp": limit_ip,
-            "flow": ""
-        }
+        """Новый метод добавления клиента по спецификации OpenAPI 3.x"""
+        path = "panel/api/clients/add"
+        client_uuid = str(uuid.uuid4())
+        
+        # Shape строго по схеме /panel/api/clients/add из openapi.json
         payload = {
-            "id": inbound_id,
-            "settings": json.dumps({"clients": [client_settings]})
+            "client": {
+                "email": email,
+                "totalGB": 0,
+                "expiryTime": 0,
+                "tgId": 0,
+                "limitIp": limit_ip,
+                "enable": True,
+                "id": client_uuid  # Для VLESS передаем UUID в поле id
+            },
+            "inboundIds": [inbound_id]
         }
+        
         response = await self._request("POST", path, json=payload)
         if response and response.get("success") is True:
-            return client_id
+            return client_uuid
         return None
 
     async def delete_client(self, inbound_id: int, client_uuid: str) -> bool:
-        path = f"panel/api/inbounds/delClient/{client_uuid}"
-        payload = {"id": inbound_id, "clientUUID": client_uuid}
-        response = await self._request("POST", path, json=payload)
+        """В новом API удаление идет по email. Мы используем UUID как уникальный email"""
+        path = f"panel/api/clients/del/{client_uuid}"
+        response = await self._request("POST", path, params={"keepTraffic": 0})
         return response and response.get("success") is True
 
     async def set_client_status(self, inbound_id: int, client_uuid: str, enable: bool) -> bool:
-        path = f"panel/api/inbounds/updateClient/{client_uuid}"
-        client_settings = {"id": client_uuid, "enable": enable}
-        payload = {
-            "id": inbound_id,
-            "settings": json.dumps({"clients": [client_settings]})
-        }
+        """В новом API блокировка идет через bulk-эндпоинты по списку email"""
+        path = "panel/api/clients/bulkEnable" if enable else "panel/api/clients/bulkDisable"
+        payload = {"emails": [client_uuid]}
         response = await self._request("POST", path, json=payload)
         return response and response.get("success") is True
 
