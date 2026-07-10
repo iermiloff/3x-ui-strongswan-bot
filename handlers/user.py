@@ -125,3 +125,119 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
             text="❌ Извините, произошла техническая ошибка при генерации ключа. Обратитесь в поддержку.",
             reply_markup=get_main_menu_keyboard()
         )
+
+from sqlalchemy.orm import selectinload
+from sqlalchemy import select
+from bot.keyboards.user import (
+    get_profile_keyboard, 
+    get_instructions_main_keyboard, 
+    get_platform_keyboard
+)
+
+# --- ЛОГИКА ПРОФИЛЯ И ВЫГРУЗКИ КЛЮЧЕЙ ---
+
+@user_router.callback_query(F.data == "menu_profile")
+async def cb_menu_profile(callback: CallbackQuery, db_user: User, db_session: AsyncSession):
+    """Вывод личного кабинета пользователя со всеми его активными ключами"""
+    now = datetime.datetime.utcnow()
+    
+    # Загружаем пользователя вместе с его активными подписками и ключами (используем selectinload для асинхронности)
+    stmt = (
+        select(User)
+        .where(User.telegram_id == db_user.telegram_id)
+        .options(
+            selectinload(User.subscriptions).selectinload(Subscription.keys)
+        )
+    )
+    result = await db_session.execute(stmt)
+    user_with_relations = result.scalar_one()
+
+    # Фильтруем только действующие подписки
+    active_subs = [s for s in user_with_relations.subscriptions if s.is_active and s.expires_at > now]
+    
+    profile_text = f"👤 <b>Личный кабинет</b>\n\n• Твой Telegram ID: <code>{db_user.telegram_id}</code>\n"
+    
+    if not active_subs:
+        profile_text += "• Статус подписки: ❌ <b>Не активна</b>\n\nУ тебя пока нет активных подключений. Ты можешь купить доступ или взять бесплатный тест в главном меню."
+    else:
+        profile_text += "• Статус подписки: ✅ <b>Активна</b>\n\n🔑 <b>Твои доступные ключи:</b>\n"
+        
+        for sub in active_subs:
+            # Отображаем тип тарифа и срок действия
+            tariff_name = "💎 PREMIUM (IKEv2 + XUI)" if sub.plan_type == SubscriptionType.PREMIUM else "🚀 БАЗОВЫЙ (Только XUI)"
+            expires_str = sub.expires_at.strftime("%d.%m.%Y %H:%M")
+            profile_text += f"\nТариф: <b>{tariff_name}</b> (До: <code>{expires_str}</code>)\n"
+            
+            if not sub.keys:
+                profile_text += "<i>Ключи еще не сгенерированы. Они появятся здесь автоматически после оплаты.</i>\n"
+            else:
+                for key in sub.keys:
+                    if key.protocol_category == ProtocolType.XUI:
+                        profile_text += f"├ <code>{key.config_data}</code>\n"
+                    elif key.protocol_category == ProtocolType.IKEV2:
+                        # Для IKEv2 разделяем логин и пароль для удобства копирования
+                        try:
+                            l, p = key.config_data.split(":", 1)
+                            profile_text += f"├ <b>IKEv2</b> Сервер: <code>{config.SSH_HOST}</code>\n├ Логин: <code>{l}</code>\n├ Пароль: <code>{p}</code>\n"
+                        except ValueError:
+                            profile_text += f"├ <b>IKEv2:</b> <code>{key.config_data}</code>\n"
+                            
+        profile_text += "\n💡 <i>Нажми на код ключа или параметры, чтобы мгновенно скопировать их.</i>"
+
+    await callback.message.edit_text(text=profile_text, reply_markup=get_profile_keyboard())
+
+@user_router.callback_query(F.data == "back_to_main")
+async def cb_back_to_main(callback: CallbackQuery, db_user: User):
+    """Возврат в главное меню"""
+    await callback.message.delete()
+    username_str = f", {db_user.username}" if db_user.username else ""
+    welcome_text = (
+        f"👋 Приветствуем{username_str} в нашем VPN-сервисе!\n\n"
+        f"⚙️ Выберите интересующий раздел в меню ниже:"
+    )
+    await callback.message.answer(text=welcome_text, reply_markup=get_main_menu_keyboard())
+
+# --- ДЕРЕВО МЕНЮ ИНСТРУКЦИЙ ---
+
+@user_router.callback_query(F.data == "instructions_main")
+async def cb_instructions_main(callback: CallbackQuery):
+    """Главный экран выбора инструкций"""
+    text = "📚 <b>Инструкции по настройке VPN</b>\n\nВыберите тип вашего подключения, чтобы получить пошаговое руководство по установке:"
+    await callback.message.edit_text(text=text, reply_markup=get_instructions_main_keyboard())
+
+@user_router.callback_query(F.data.in_(["instructions_xui", "instructions_ikev2"]))
+async def cb_instructions_protocol(callback: CallbackQuery):
+    """Выбор платформы для конкретного протокола"""
+    protocol = "xui" if callback.data == "instructions_xui" else "ikev2"
+    p_name = "3x-ui (Xray/Trojan/VLESS)" if protocol == "xui" else "Premium (IKEv2)"
+    
+    text = f"📱 <b>Инструкции для {p_name}</b>\n\nВыберите операционную систему вашего устройства:"
+    await callback.message.edit_text(text=text, reply_markup=get_platform_keyboard(protocol))
+
+@user_router.callback_query(F.data.startswith("inst_"))
+async def cb_show_concrete_instruction(callback: CallbackQuery):
+    """Вывод финального текста инструкции на основе выбранного протокола и ОС"""
+    parts = callback.data.split("_") # Формат: inst_xui_ios или inst_ikev2_android
+    protocol = parts[1]
+    os_type = parts[2]
+    
+    # Словарь текстов инструкций (в будущем можно вынести в базу или JSON)
+    instructions = {
+        "xui": {
+            "ios": "🍏 <b>Настройка XUI на iPhone (VLESS/Trojan)</b>\n\n1. Скачайте приложение <b>v2rayTUN</b> или <b>FoXray</b> из App Store.\n2. Скопируйте ключ из профиля бота (начинается на vless:// или trojan://).\n3. Откройте приложение, нажмите значок '+' и выберите 'Import from Clipboard'.\n4. Нажмите кнопку подключения (Power) и разрешите добавление VPN-конфигурации.",
+            "android": "🤖 <b>Настройка XUI на Android (VLESS/Trojan)</b>\n\n1. Скачайте приложение <b>v2rayNG</b> из Google Play.\n2. Скопируйте ключ из бота.\n3. Откройте приложение, нажмите '+' вверху и выберите 'Импортировать профиль из буфера обмена'.\n4. Нажмите на круглую кнопку подключения в правом нижнем углу.",
+            "macos": "💻 <b>Настройка XUI на macOS</b>\n\n1. Скачайте приложение <b>V2rayU</b> или <b>FoXray</b>.\n2. Скопируйте ключ подключения.\n3. Импортируйте его через буфер обмена в программу.\n4. Переключите режим на Global или Rule и активируйте соединение.",
+            "windows": "🪟 <b>Настройка XUI на Windows</b>\n\n1. Скачайте программу <b>v2rayN</b> (с GitHub).\n2. Скопируйте ваш ключ.\n3. В программе нажмите 'Servers' -> 'Import bulk URL from clipboard'.\n4. Нажмите правой кнопкой мыши по иконке программы в трее, выберите 'System proxy' -> 'Set system proxy'."
+        },
+        "ikev2": {
+            "ios": "🍏 <b>Настройка Premium IKEv2 на iPhone (Без программ!)</b>\n\n1. Откройте <b>Настройки</b> -> <b>Основные</b> -> <b>VPN и управление устройством</b> -> <b>VPN</b>.\n2. Нажмите <b>Добавить конфигурацию VPN</b>.\n3. Выберите тип: <b>IKEv2</b>.\n4. Заполните поля:\n• Описание: Любое имя (например, MyVPN)\n• Сервер: Адрес сервера из профиля бота\n• Удаленный ID: Тот же адрес сервера\n5. В блоке Аутентификация выберите <b>Имя пользователя</b>:\n• Логин и Пароль возьмите из профиля бота.\n6. Готово! Включайте тумблер.",
+            "android": "🤖 <b>Настройка Premium IKEv2 на Android</b>\n\n1. Скачайте официальное приложение <b>strongSwan VPN Client</b> из Google Play.\n2. Нажмите <b>Add VPN profile</b>.\n3. В поле Server введите адрес сервера из бота.\n4. VPN Type выберите: <b>IKEv2 EAP (Username/Password)</b>.\n5. Введите ваши Логин и Пароль из профиля бота.\n6. Сохраните профиль и нажмите для подключения.",
+            "macos": "💻 <b>Настройка Premium IKEv2 на macOS (Нативно)</b>\n\n1. Откройте Системные настройки -> Сеть.\n2. Нажмите значок '+' (или 'Добавить интерфейс'), выберите Интерфейс: <b>VPN</b>, Тип VPN: <b>IKEv2</b>.\n3. Введите адрес сервера в поля 'Адрес сервера' и 'Удаленный ID'.\n4. Нажмите 'Настройки аутентификации', выберите 'Имя пользователя/пароль' и скопируйте данные из бота.\n5. Нажмите 'Подключить'.",
+            "windows": "🪟 <b>Настройка Premium IKEv2 на Windows</b>\n\n1. Откройте Параметры -> Сеть и Интернет -> VPN -> Добавить VPN.\n2. Поставщик VPN: Windows (встроенное).\n3. Имя подключения: Любое.\n4. Имя или адрес сервера: Скопируйте адрес из бота.\n5. Тип VPN: <b>IKEv2</b>.\n6. Тип данных для входа: Имя пользователя и пароль.\n7. Сохраните и нажмите 'Подключиться'."
+        }
+    }
+    
+    text = instructions[protocol][os_type]
+    
+    # Для удобства юзера возвращаем его на экран выбора платформ этого же протокола
+    await callback.message.edit_text(text=text, reply_markup=get_platform_keyboard(protocol))
