@@ -68,3 +68,14 @@ class VPNKey(Base):
 
     # Связи
     subscription: Mapped["Subscription"] = relationship(back_populates="keys")
+
+class TariffInbound(Base):
+    __tablename__ = "tariff_inbounds"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_type: Mapped[SubscriptionType] = mapped_column(String(20)) # base или premium
+    inbound_id: Mapped[int] = mapped_column(unique=True)            # ID инбаунда из 3x-ui
+    protocol_name: Mapped[str] = mapped_column(String(50))         # VLESS, TROJAN и т.д.
+    port: Mapped[int] = mapped_column()
+    remark: Mapped[str] = mapped_column(String(255))               # Название из панели
+
