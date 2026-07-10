@@ -241,3 +241,47 @@ async def cb_show_concrete_instruction(callback: CallbackQuery):
     
     # Для удобства юзера возвращаем его на экран выбора платформ этого же протокола
     await callback.message.edit_text(text=text, reply_markup=get_platform_keyboard(protocol))
+
+def get_tariffs_keyboard() -> InlineKeyboardMarkup:
+    """Выбор типа подписки"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🚀 БАЗОВЫЙ (Только 3x-ui / Xray)", callback_data="buy_plan_base")
+        ],
+        [
+            InlineKeyboardButton(text="💎 PREMIUM (3x-ui + IKEv2 для iOS/Mac)", callback_data="buy_plan_premium")
+        ],
+        [
+            InlineKeyboardButton(text="⬅️ В главное меню", callback_data="back_to_main")
+        ]
+    ])
+    return keyboard
+
+def get_periods_keyboard(plan_type: str) -> InlineKeyboardMarkup:
+    """Выбор длительности подписки"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🗓 1 Месяц", callback_data=f"buy_time_{plan_type}_30"),
+            InlineKeyboardButton(text="🗓 3 Месяца (-10%)", callback_data=f"buy_time_{plan_type}_90")
+        ],
+        [
+            InlineKeyboardButton(text="🗓 6 Месяцев (-20%)", callback_data=f"buy_time_{plan_type}_180")
+        ],
+        [
+            InlineKeyboardButton(text="⬅️ Назад к тарифам", callback_data="menu_buy")
+        ]
+    ])
+    return keyboard
+
+def get_assets_keyboard(plan_type: str, days: str) -> InlineKeyboardMarkup:
+    """Выбор криптовалюты для оплаты"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🟢 USDT (Tether)", callback_data=f"pay_{plan_type}_{days}_USDT"),
+            InlineKeyboardButton(text="💎 TON (Toncoin)", callback_data=f"pay_{plan_type}_{days}_TON")
+        ],
+        [
+            InlineKeyboardButton(text="⬅️ Назад к выбору срока", callback_data=f"buy_plan_{plan_type}")
+        ]
+    ])
+    return keyboard
