@@ -82,34 +82,39 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
     sub = await create_subscription(db_session, db_user.telegram_id, SubscriptionType.BASE, duration_days=1)
 
     # 3. Интеграция с 3x-ui (XUI)
-    try:
-        inbounds = await xui_client.get_inbounds()
-        if inbounds:
-            # Берем первый доступный инбаунд для тестов
-            target_inbound = inbounds[0]
-            inbound_id = target_inbound["id"]
-            protocol = target_inbound["protocol"]
+    # НОВАЯ МУЛЬТИ-ПРОТОКОЛЬНАЯ ВЫДАЧА 3X-UI
+    if config.ENABLE_XUI:
+        try:
+            # Находим в БД ВСЕ инбаунды, которые админ привязал к текущему тарифу
+            # Для триала жестко ищем SubscriptionType.BASE, для оплаты — plan_type
+            target_plan = SubscriptionType.BASE if "trial" in callback.data else plan_type
             
-            email = f"trial_{db_user.telegram_id}_{uuid.uuid4().hex[:4]}"
-            client_uuid = await xui_client.add_client(inbound_id=inbound_id, email=email)
-            
-            if client_uuid:
-                # Базовая строка конфигурации
-                config_link = generate_xui_link(target_inbound, client_uuid, email)
-                
-                vpn_key = VPNKey(
-                    subscription_id=sub.id,
-                    protocol_category=ProtocolType.XUI,
-                    protocol_name=protocol.upper(),
-                    client_uuid=client_uuid,
-                    inbound_id=inbound_id,
-                    config_data=config_link
-                )
-                db_session.add(vpn_key)
-                issued_keys_info.append(f"🔑 <b>{protocol.upper()} (3x-ui):</b>\n<code>{config_link}</code>")
-                has_created_any = True
-    except Exception as e:
-        logger.error(f"Ошибка при создании тестового ключа в 3x-ui: {e}")
+            res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == target_plan))
+            active_tariff_inbounds = res.scalars().all()
+
+            for ib in active_tariff_inbounds:
+                # Запрашиваем актуальный streamSettings для каждого инбаунда из панели
+                target_inbound = await xui_client.get_inbound_info(ib.inbound_id)
+                if target_inbound:
+                    email = f"user_{pay_user_id}_{uuid.uuid4().hex[:4]}"
+                    client_uuid = await xui_client.add_client(inbound_id=ib.inbound_id, email=email)
+                    
+                    if client_uuid:
+                        config_link = generate_xui_link(target_inbound, client_uuid, email)
+                        
+                        vpn_key = VPNKey(
+                            subscription_id=sub.id,
+                            protocol_category=ProtocolType.XUI,
+                            protocol_name=ib.protocol_name.upper(),
+                            client_uuid=client_uuid,
+                            inbound_id=ib.inbound_id,
+                            config_data=config_link
+                        )
+                        db_session.add(vpn_key)
+                        issued_keys_text.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
+        except Exception as e:
+            logger.error(f"Ошибка мульти-генерации XUI: {e}")
+
 
     # 4. Итог операции
     if has_created_any:
@@ -448,32 +453,39 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
     issued_keys_text = []
     
     # 3. ГЕНЕРАЦИЯ ДЛЯ 3X-UI
+    # НОВАЯ МУЛЬТИ-ПРОТОКОЛЬНАЯ ВЫДАЧА 3X-UI
     if config.ENABLE_XUI:
         try:
-            inbounds = await xui_client.get_inbounds()
-            if inbounds:
-                target_inbound = inbounds
-                inbound_id = target_inbound["id"]
-                protocol = target_inbound["protocol"]
-                
-                email = f"user_{pay_user_id}_{uuid.uuid4().hex[:4]}"
-                client_uuid = await xui_client.add_client(inbound_id=inbound_id, email=email)
-                
-                if client_uuid:
-                    config_link = generate_xui_link(target_inbound, client_uuid, email)
+            # Находим в БД ВСЕ инбаунды, которые админ привязал к текущему тарифу
+            # Для триала жестко ищем SubscriptionType.BASE, для оплаты — plan_type
+            target_plan = SubscriptionType.BASE if "trial" in callback.data else plan_type
+            
+            res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == target_plan))
+            active_tariff_inbounds = res.scalars().all()
+
+            for ib in active_tariff_inbounds:
+                # Запрашиваем актуальный streamSettings для каждого инбаунда из панели
+                target_inbound = await xui_client.get_inbound_info(ib.inbound_id)
+                if target_inbound:
+                    email = f"user_{pay_user_id}_{uuid.uuid4().hex[:4]}"
+                    client_uuid = await xui_client.add_client(inbound_id=ib.inbound_id, email=email)
                     
-                    vpn_key = VPNKey(
-                        subscription_id=sub.id,
-                        protocol_category=ProtocolType.XUI,
-                        protocol_name=protocol.upper(),
-                        client_uuid=client_uuid,
-                        inbound_id=inbound_id,
-                        config_data=config_link
-                    )
-                    db_session.add(vpn_key)
-                    issued_keys_text.append(f"🚀 <b>Ключ {protocol.upper()} (3x-ui):</b>\n<code>{config_link}</code>")
+                    if client_uuid:
+                        config_link = generate_xui_link(target_inbound, client_uuid, email)
+                        
+                        vpn_key = VPNKey(
+                            subscription_id=sub.id,
+                            protocol_category=ProtocolType.XUI,
+                            protocol_name=ib.protocol_name.upper(),
+                            client_uuid=client_uuid,
+                            inbound_id=ib.inbound_id,
+                            config_data=config_link
+                        )
+                        db_session.add(vpn_key)
+                        issued_keys_text.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
         except Exception as e:
-            logger.error(f"Ошибка генерации XUI при оплате: {e}")
+            logger.error(f"Ошибка мульти-генерации XUI: {e}")
+
 
     # 4. ГЕНЕРАЦИЯ ДЛЯ STRONGSWAN
     if plan_type == SubscriptionType.PREMIUM and config.ENABLE_STRONGSWAN:
