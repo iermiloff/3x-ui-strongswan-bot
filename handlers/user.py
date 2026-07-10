@@ -6,6 +6,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.utils.qr import create_qr_code_file
 from bot.services.link_generator import generate_xui_link
 from bot.config import config
 from bot.database.models import User, SubscriptionType, ProtocolType, VPNKey
@@ -112,20 +113,21 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
 
     # 4. Итог операции
     if has_created_any:
-        # Обновляем таймстамп в БД, закрывая доступ к повторному тесту на 30 дней
         await update_free_trial_timestamp(db_session, db_user.telegram_id)
-        
+
         result_text = (
             "🎁 <b>Тестовый период успешно активирован на 1 день!</b>\n\n"
             "Ваш доступ к конфигурации:\n\n" + "\n\n".join(issued_keys_info) + 
-            "\n\n⚠️ Ссылка закроется автоматически ровно через 24 часа. Купить полноценный доступ (включая iOS-премиум IKEv2) можно в главном меню."
+            "\n\n⚠️ Ссылка закроется автоматически через 24 часа. Отсканируйте QR-код ниже для быстрой настройки!"
         )
-        await callback.message.edit_text(text=result_text, reply_markup=get_main_menu_keyboard())
-    else:
-        await callback.message.edit_text(
-            text="❌ Извините, произошла техническая ошибка при генерации ключа. Обратитесь в поддержку.",
-            reply_markup=get_main_menu_keyboard()
-        )
+
+        # Если у нас есть ссылка XUI, генерируем под неё QR-код
+        if config.ENABLE_XUI and config_link:
+            qr_file = create_qr_code_file(config_link, filename="trial_qr.png")
+            await callback.message.delete() # Удаляем старое текстовое сообщение "Генерирую..."
+            await callback.message.answer_photo(photo=qr_file, caption=result_text, reply_markup=get_main_menu_keyboard())
+        else:
+            await callback.message.edit_text(text=result_text, reply_markup=get_main_menu_keyboard())
 
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select
@@ -510,8 +512,15 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
         f"• Тариф: <b>{plan_type.upper()}</b>\n"
         f"• Срок действия: до <code>{expires_str}</code>\n\n"
         f"🛒 <b>Ваши доступы:</b>\n\n" + "\n\n".join(issued_keys_text) +
-        f"\n\n📚 Инструкции по настройке для всех устройств доступны в разделе <b>👤 Мой профиль / Ключи</b>."
+        f"\n\n📚 Инструкции по настройке доступны в разделе <b>👤 Мой профиль / Ключи</b>."
     )
-    
-    await callback.message.edit_text(text=success_message, reply_markup=get_main_menu_keyboard())
+
+    # Ищем ссылку XUI среди сгенерированных ключей для создания QR
+    xui_key = next((k for k in sub.keys if k.protocol_category == ProtocolType.XUI), None)
+    if xui_key:
+        qr_file = create_qr_code_file(xui_key.config_data, filename="vpn_paid_qr.png")
+        await callback.message.delete()
+        await callback.message.answer_photo(photo=qr_file, caption=success_message, reply_markup=get_main_menu_keyboard())
+    else:
+        await callback.message.edit_text(text=success_message, reply_markup=get_main_menu_keyboard())
 
