@@ -34,14 +34,22 @@ async def on_shutdown(bot: Bot):
     logger.info("Бот успешно остановлен.")
 
 async def main():
-    # Инициализируем бота, скрывая токен и включая форматирование сообщений через HTML
     bot = Bot(
         token=config.BOT_TOKEN.get_secret_value(),
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     
-    # Главный диспетчер aiogram
     dp = Dispatcher()
+
+    # ИМПОРТИРУЕМ И РЕГИСТРИРУЕМ НАШУ МИДЛВАРЬ ДЛЯ БАЗЫ ДАННЫХ
+    from bot.middlewares.db import DbSessionMiddleware
+    dp.update.middleware(DbSessionMiddleware())
+
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
+
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
 
     # Регистрируем функции, которые выполнятся при старте и остановке
     dp.startup.register(on_startup)
