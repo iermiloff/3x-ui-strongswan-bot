@@ -310,7 +310,6 @@ def get_assets_keyboard(plan_type: str, days: str) -> InlineKeyboardMarkup:
     ])
     return keyboard
 
-from bot.keyboards.user import get_tariffs_keyboard, get_periods_keyboard, get_assets_keyboard
 from bot.services.cryptobot import cryptobot_client
 
 # Фиксированные цены в USD
