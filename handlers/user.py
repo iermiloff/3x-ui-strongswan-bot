@@ -111,6 +111,7 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
                             config_data=config_link
                         )
                         db_session.add(vpn_key)
+                        has_created_any = True
                         issued_keys_info.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
         except Exception as e:
             logger.error(f"Ошибка мульти-генерации XUI: {e}")
