@@ -1,11 +1,23 @@
 #!/bin/sh
 
-echo "⏳ Ожидаю запуск базы данных PostgreSQL (${DB_HOST}:${DB_PORT})..."
+echo "⏳ Ожидаю запуск базы данных PostgreSQL..."
 
-# Цикл, который проверяет доступность порта каждые 1 секунду
-while ! nc -z "$DB_HOST" "$DB_PORT"; do
-  sleep 1
-done
+# Запускаем однострочник на чистом Python, который пингует порт базы данных
+python -c "
+import socket
+import time
+import os
+
+host = os.getenv('DB_HOST', 'postgres_db')
+port = int(os.getenv('DB_PORT', 5432))
+
+while True:
+    try:
+        with socket.create_connection((host, port), timeout=1):
+            break
+    except (OSError, ConnectionRefusedError):
+        time.sleep(1)
+"
 
 echo "✅ База данных успешно запущена! Применяю миграции Alembic..."
 alembic upgrade head
