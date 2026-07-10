@@ -62,7 +62,7 @@ class XUIClient:
                 self.client.headers["Content-Type"] = "application/json"
             
             if response.status_code != 200:
-                logger.error(f"Ошибка авторизации 3x-ui. Статус HTTP: {response.status_code}. Проверьте правильность логина/пароля в .env!")
+                logger.error(f"Ошибка авторизации 3x-ui. Статус HTTP: {response.status_code}. Проверьте правильность логина/пароля in .env!")
                 return False
                 
             resp_json = response.json()
@@ -76,7 +76,6 @@ class XUIClient:
         except Exception as e:
             logger.error(f"Исключение при попытке авторизации в 3x-ui: {e}")
             return False
-
 
 
     async def _request(self, method: str, path: str, **kwargs) -> Optional[Dict[str, Any]]:
