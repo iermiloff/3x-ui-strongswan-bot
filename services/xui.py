@@ -50,7 +50,7 @@ class XUIClient:
     async def add_client(self, inbound_id: int, email: str, limit_ip: int = 2) -> Optional[str]:
         """Новый метод добавления клиента по спецификации OpenAPI 3.x"""
         path = "panel/api/clients/add"
-        client_uuid = str(uuid.uuid4())
+        client_uuid = uuid.uuid4().hex
         
         # Shape строго по схеме /panel/api/clients/add из openapi.json
         payload = {
