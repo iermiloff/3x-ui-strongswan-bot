@@ -9,8 +9,8 @@ from bot.config import config
 logger = logging.getLogger(__name__)
 
 class XUIClient:
-    def __init__(self):
-        # Принудительно гарантируем, что базовый URL заканчивается слэшем
+      def __init__(self):
+        # Гарантируем, что базовый URL заканчивается слэшем
         url_str = config.XUI_URL if config.XUI_URL else ""
         if url_str and not url_str.endswith('/'):
             url_str += '/'
@@ -35,16 +35,16 @@ class XUIClient:
 
     async def login(self) -> bool:
         """
-        Авторизация в панели MHSanaei 3.4.2.
-        POST-запрос отправляется СТРОГО на корневой кастомный путь панели без слова login!
+        Авторизация в API MHSanaei 3.4.2.
+        Запрос идет на /base_path/login строго в формате JSON!
         """
         if not config.ENABLE_XUI or not self.full_url:
             logger.warning("Интеграция с 3x-ui отключена или не настроена.")
             return False
 
-        # Отправляем POST на пустую строку "", что означает отправку прямо на self.full_url
-        # (https://188.120.234)
-        login_url = ""
+        # httpx корректно склеит base_url (слэш на конце) и относительный путь "login"
+        # Получится: https://188.120.234
+        login_url = "login"
         
         payload = {
             "username": self.username,
@@ -52,11 +52,11 @@ class XUIClient:
         }
         
         try:
-            # Отправляем СТРОГО как json-тело. Именно так панель принимает API-авторизацию
+            # Пушим строго как json=payload, чтобы панель приняла API-авторизацию
             response = await self.client.post(login_url, json=payload)
             
             if response.status_code != 200:
-                logger.error(f"Ошибка авторизации 3x-ui. Статус HTTP: {response.status_code}. Проверьте логин/пароль.")
+                logger.error(f"Ошибка авторизации 3x-ui. Статус HTTP: {response.status_code}. Проверьте правильность логина/пароля в .env!")
                 return False
                 
             resp_json = response.json()
