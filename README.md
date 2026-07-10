@@ -1,6 +1,6 @@
 # 🚀 Hybrid VPN Telegram Bot (3x-ui + StrongSwan)
 
-Асинхронный Telegram-бот на **aiogram 3.x** и **PostgreSQL** для автоматизации продаж и управления подписками VPN. Поддерживает гибридную работу с панелью 3x-ui (любые протоколы: VLESS Reality, Trojan gRPC, Shadowsocks) и нативным протоколом IKEv2 (StrongSwan) для Apple-устройств и роутеров.
+Асинхронный Telegram-бот на **aiogram 3.x** и **PostgreSQL** для автоматизации продаж и управления подписками VPN. Поддерживает гибридную работу с панелью 3x-ui (любые протоколы: VLESS Reality, Trojan gRPC, Shadowsocks) и нативным протоколом IKEv2 (StrongSwan) для Apple-устройств и роутеров
 
 ## ✨ Ключевые фичи
 - **Модульность:** Работает как с обеими панелями, так и с любой одной на выбор (настраивается в `.env`).
@@ -11,6 +11,7 @@
 - **Автоматическое ночное отключение:** Ежесуточный фоновый скрипт (APScheduler в 03:00 UTC) отключает протухшие подписки пачкой, минимизируя перезапуски StrongSwan.
 - **Удобный UX:** Автоматическая генерация QR-кодов в оперативной памяти (без нагрузки на SSD) для мобильных клиентов.
 - **Админ-панель:** Просмотр статистики и полное управление юзерами (активация/деактивация/удаление каскадом).
+- **База данных на Alembic:** Удобная система миграций, позволяющая обновлять структуру БД без потери данных клиентов.
 
 ---
 
@@ -27,8 +28,8 @@ sudo systemctl enable --now docker
 ### 2. Клонирование репозитория
 Склонируйте проект и перейдите в его директорию:
 ```bash
-git clone https://github.com/iermiloff/3x-ui-strongswan-bot/
-cd 3x-ui-strongswan-bot
+git clone https://github.com/iermiloff/3x-ui-strongswan-bot
+cd 3x-ui-strongswan-bo
 ```
 
 ### 3. Настройка конфигурации (`.env`)
@@ -39,7 +40,7 @@ nano .env
 ```
 Заполните все обязательные поля (токен бота, ID админов, доступы к 3x-ui и SSH для StrongSwan). 
 
-> **Важно для StrongSwan:** Убедитесь, что бот имеет доступ по SSH-ключу к серверу VPN и создана директория `/etc/swanctl/conf.d/`.
+> **Важно для StrongSwan:** Убедитесь, что на сервере VPN создана директория `/etc/swanctl/conf.d/` для изолированных конфигураций пользователей.
 
 ### 4. Создание Docker Compose манифеста
 Создайте в корне проекта файл `docker-compose.yml` для поднятия базы данных и бота в изолированных контейнерах:
@@ -62,7 +63,7 @@ services:
       POSTGRES_DB: \${DB_NAME}
       TZ: UTC
     volumes:
-       doctrinal_data:/var/lib/postgresql/data
+      - postgres_vpn_data:/var/lib/postgresql/data
     ports:
       - "\${DB_PORT}:5432"
 
@@ -75,48 +76,24 @@ services:
     environment:
       TZ: UTC
     volumes:
-      - ./.env:/app/.env
+      - ./.env:/app/bot/.env
       # Если SSH-ключ для StrongSwan лежит локально, пробросьте его:
-      # - /root/.ssh/id_rsa:/app/ssh_key:ro
+      # - /root/.ssh/id_rsa:/root/.ssh/id_rsa:ro
 
 volumes:
-  doctrinal_data:
+  postgres_vpn_data:
 ```
 
-### 5. Создание Dockerfile
-Для сборки образа бота создайте файл `Dockerfile`:
-```bash
-nano Dockerfile
-```
-
-Вставьте в него:
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Установка системных зависимостей для сборки некоторых библиотек
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-# Команда запуска бота
-CMD ["python", "-m", "main"]
-```
-
-### 6. Запуск всей экосистемы
+### 5. Запуск всей экосистемы
 Запустите сборку и старт контейнеров в фоновом режиме (демон):
 ```bash
 docker-compose up -d --build
 ```
+*Контейнер бота при первом запуске автоматически применит миграции Alembic и разметит таблицы `users`, `subscriptions` и `vpn_keys` в базе данных.*
 
-### 7. Проверка работы
+### 6. Проверка работы
 Посмотреть логи работы бота в реальном времени:
 ```bash
 docker-compose logs -f bot
 ```
+
