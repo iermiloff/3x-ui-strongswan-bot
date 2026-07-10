@@ -128,6 +128,15 @@ class XUIClient:
             return response.get("obj")
         return None
 
+    async def get_inbounds(self) -> Optional[list]:
+        """Получает список всех входящих подключений (inbounds) из панели"""
+        path = "/panel/api/inbounds/list"
+        response = await self._request("GET", path)
+        if response and response.get("success") is True:
+            return response.get("obj", [])
+        return None
+
+
     async def close(self):
         await self.client.aclose()
 
