@@ -16,19 +16,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+from bot.services.scheduler import setup_scheduler
+
+# Создаем глобальную переменную для шедулера, чтобы иметь к ней доступ при остановке
+scheduler = setup_scheduler()
+
 async def on_startup(bot: Bot):
     logger.info("Бот запускается...")
-    # При старте пробуем авторизоваться в 3x-ui панель, если она включена
     if config.ENABLE_XUI:
         success = await xui_client.login()
         if success:
             logger.info("Первичная проверка связи с 3x-ui успешна!")
         else:
             logger.warning("Не удалось связаться с 3x-ui! Проверьте панель и настройки .env")
+            
+    # Запускаем планировщик фоновых задач
+    scheduler.start()
+    logger.info("Планировщик фоновых задач успешно запущен (Проверка в 03:00 UTC).")
 
 async def on_shutdown(bot: Bot):
     logger.info("Бот останавливается...")
-    # Закрываем сессию клиента 3x-ui, чтобы освободить ресурсы сервера
+    # Останавливаем планировщик
+    scheduler.shutdown()
     if config.ENABLE_XUI:
         await xui_client.close()
     logger.info("Бот успешно остановлен.")
