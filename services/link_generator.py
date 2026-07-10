@@ -7,7 +7,7 @@ from aiogram.types import BufferedInputFile
 
 logger = logging.getLogger(__name__)
 
-def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> Optional[str]:
+def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str | None:
     """
     Каноничная сборка VPN-ссылок под MHSanaei 3.4.2 (VLESS Reality / Trojan / Shadowsocks).
     Безопасно переваривает и словари, и строки в ответах API.
