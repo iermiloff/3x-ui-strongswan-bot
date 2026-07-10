@@ -15,16 +15,14 @@ class XUIClient:
             url_str += '/'
         self.full_url = url_str
         
-        self.username = config.XUI_USER
-        self.password = config.XUI_PASSWORD.get_secret_value() if config.XUI_PASSWORD else ""
+        # Теперь здесь хранится ваш API Токен из панели
+        self.api_token = config.XUI_PASSWORD.get_secret_value() if config.XUI_PASSWORD else ""
         
-        # Эмулируем полноценный браузерный контекст, подставляя Referer и Origin
+        # Настраиваем авторизацию через Bearer-токен строго по спецификации OpenAPI
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Origin": self.full_url.rstrip('/'),
-            "Referer": self.full_url
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.api_token}"
         }
         
         self.client = httpx.AsyncClient(
@@ -35,54 +33,16 @@ class XUIClient:
             verify=False
         )
 
-
     async def login(self) -> bool:
-        """Авторизация по строгому стандарту предоставленного openapi.json"""
-        if not config.ENABLE_XUI or not self.full_url:
-            logger.warning("Интеграция с 3x-ui отключена или не настроена.")
-            return False
-
-        # httpx склеит base_url и путь, получится ровно: /WgijWp3l2YbP7Fc6Dc/login
-        login_path = "login"
-        
-        # Контент строго по схеме requestBody из openapi.json
-        payload = {
-            "username": self.username,
-            "password": self.password,
-            "twoFactorCode": ""
-        }
-        
-        try:
-            # Шлем СТРОГО json=payload. httpx сам выставит идеальный Content-Type: application/json
-            response = await self.client.post(login_path, json=payload)
-            
-            if response.status_code != 200:
-                logger.error(f"Ошибка авторизации 3x-ui. Сетевой путь: {self.full_url}{login_path}. Статус HTTP: {response.status_code}.")
-                return False
-                
-            resp_json = response.json()
-            if resp_json.get("success") is True:
-                logger.info("✅ Успешная авторизация в панели 3x-ui по спецификации OpenAPI!")
-                return True
-            else:
-                logger.error(f"Панель отклонила учетные данные: {resp_json.get('msg')}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Исключение при попытке авторизации в 3x-ui: {e}")
-            return False
+        """Метод-заглушка. При Bearer-авторизации логин не требуется, токен активен всегда"""
+        return True
 
     async def _request(self, method: str, path: str, **kwargs) -> Optional[Dict[str, Any]]:
-        # Обрезаем ведущий слэш, так как httpx корректно объединяет base_url (заканчивающийся на /) и относительный путь
         url = path.lstrip('/')
         try:
             response = await self.client.request(method, url, **kwargs)
-            if response.status_code == 401 or response.status_code == 302:
-                if await self.login():
-                    response = await self.client.request(method, url, **kwargs)
-                else:
-                    return None
             if response.status_code != 200:
+                logger.error(f"Ошибка API запроса к {url}. Статус HTTP: {response.status_code}. Проверьте токен в .env!")
                 return None
             return response.json()
         except Exception as e:
@@ -147,3 +107,4 @@ class XUIClient:
         await self.client.aclose()
 
 xui_client = XUIClient()
+
