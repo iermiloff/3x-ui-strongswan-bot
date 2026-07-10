@@ -10,25 +10,24 @@ logger = logging.getLogger(__name__)
 
 class XUIClient:
     def __init__(self):
-        # Читаем адрес из .env (https://188.120.234.166:10569/WgijWp3l2YbP7Fc6Dc)
-        raw_url = config.XUI_URL if config.XUI_URL else ""
-        parsed = urllib.parse.urlparse(raw_url)
-        
-        # Выделяем ЧИСТЫЙ КОРЕНЬ сервера (https://188.120.234.166:10569) строго по OpenAPI
-        self.root_url = f"{parsed.scheme}://{parsed.netloc}/" if raw_url else ""
+        # Базовый URL со всеми путями (https://188.120.234)
+        url_str = config.XUI_URL if config.XUI_URL else ""
+        if url_str and not url_str.endswith('/'):
+            url_str += '/'
+        self.full_url = url_str
         
         self.username = config.XUI_USER
         self.password = config.XUI_PASSWORD.get_secret_value() if config.XUI_PASSWORD else ""
         
+        # Оставляем только базовый User-Agent, Content-Type не захардкоживаем!
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Content-Type": "application/json"
+            "Accept": "application/json, text/plain, */*"
         }
         
-        # Клиент инициализируется на чистый корень IP:ПОРТ
+        # Клиент инициализируется строго на полный путь с префиксом
         self.client = httpx.AsyncClient(
-            base_url=self.root_url,
+            base_url=self.full_url,
             timeout=10.0,
             follow_redirects=True,
             headers=headers,
@@ -36,25 +35,27 @@ class XUIClient:
         )
 
     async def login(self) -> bool:
-        """Авторизация по каноничному пути OpenAPI с JSON-телом"""
-        if not config.ENABLE_XUI or not self.root_url:
+        """Авторизация по строгому стандарту предоставленного openapi.json"""
+        if not config.ENABLE_XUI or not self.full_url:
             logger.warning("Интеграция с 3x-ui отключена или не настроена.")
             return False
 
-        # Запрос идет строго на https://ip:port/login
+        # httpx склеит base_url и путь, получится ровно: /WgijWp3l2YbP7Fc6Dc/login
         login_path = "login"
+        
+        # Контент строго по схеме requestBody из openapi.json
         payload = {
             "username": self.username,
             "password": self.password,
-            "twoFactorCode": "" # Пустая строка, если 2FA отключен в панели
+            "twoFactorCode": ""
         }
         
         try:
-            # Отправляем СТРОГО json=payload (Content-Type: application/json)
+            # Шлем СТРОГО json=payload. httpx сам выставит идеальный Content-Type: application/json
             response = await self.client.post(login_path, json=payload)
             
             if response.status_code != 200:
-                logger.error(f"Ошибка авторизации 3x-ui. Статус HTTP: {response.status_code}. Проверьте логин/пароль.")
+                logger.error(f"Ошибка авторизации 3x-ui. Сетевой путь: {self.full_url}{login_path}. Статус HTTP: {response.status_code}.")
                 return False
                 
             resp_json = response.json()
@@ -70,26 +71,20 @@ class XUIClient:
             return False
 
     async def _request(self, method: str, path: str, **kwargs) -> Optional[Dict[str, Any]]:
-        # Все рабочие запросы автоматически дополняются вашим кастомным префиксом из .env
-        raw_url = config.XUI_URL if config.XUI_URL else ""
-        parsed = urllib.parse.urlparse(raw_url)
-        base_path = parsed.path.strip("/")
-        
-        # Формируем правильный путь (например, WgijWp3l2YbP7Fc6Dc/panel/api/inbounds/list)
-        full_path = f"{base_path}/{path.lstrip('/')}"
-        
+        # Обрезаем ведущий слэш, так как httpx корректно объединяет base_url (заканчивающийся на /) и относительный путь
+        url = path.lstrip('/')
         try:
-            response = await self.client.request(method, full_path, **kwargs)
+            response = await self.client.request(method, url, **kwargs)
             if response.status_code == 401 or response.status_code == 302:
                 if await self.login():
-                    response = await self.client.request(method, full_path, **kwargs)
+                    response = await self.client.request(method, url, **kwargs)
                 else:
                     return None
             if response.status_code != 200:
                 return None
             return response.json()
         except Exception as e:
-            logger.error(f"Ошибка API запроса к {full_path}: {e}")
+            logger.error(f"Ошибка API запроса к {url}: {e}")
             return None
 
     async def add_client(self, inbound_id: int, email: str, limit_ip: int = 2) -> Optional[str]:
@@ -150,5 +145,3 @@ class XUIClient:
         await self.client.aclose()
 
 xui_client = XUIClient()
-
-
