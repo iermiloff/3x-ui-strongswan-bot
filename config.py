@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     XUI_USER: Optional[str] = None
     XUI_PASSWORD: Optional[SecretStr] = None
 
+    # StrongSwan / SSH (Опционально, если ENABLE_STRONGSWAN=True)
+    SSH_HOST: Optional[str] = None
+    SSH_PORT: Optional[int] = 22
+    SSH_USER: Optional[str] = None
+    SSH_KEY_PATH: Optional[str] = None
+
     # CryptoBot
     CRYPTO_BOT_TOKEN: SecretStr
     IS_NET_TEST: bool = True
@@ -39,7 +45,6 @@ class Settings(BaseSettings):
             v = v.strip().strip("[] ,")
             if not v:
                 return []
-            # Если это строка через запятую
             if "," in v:
                 return [int(x.strip()) for x in v.split(",") if x.strip()]
             return [int(v)]
@@ -48,4 +53,3 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 config = Settings()
-
