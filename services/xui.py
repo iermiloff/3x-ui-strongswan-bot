@@ -1,7 +1,6 @@
 import logging
 import json
 import uuid
-import urllib.parse
 from typing import Optional, Dict, Any
 import httpx
 from bot.config import config
@@ -9,8 +8,7 @@ from bot.config import config
 logger = logging.getLogger(__name__)
 
 class XUIClient:
-      def __init__(self):
-        # Гарантируем, что базовый URL заканчивается слэшем
+    def __init__(self):
         url_str = config.XUI_URL if config.XUI_URL else ""
         if url_str and not url_str.endswith('/'):
             url_str += '/'
@@ -42,17 +40,13 @@ class XUIClient:
             logger.warning("Интеграция с 3x-ui отключена или не настроена.")
             return False
 
-        # httpx корректно склеит base_url (слэш на конце) и относительный путь "login"
-        # Получится: https://188.120.234
         login_url = "login"
-        
         payload = {
             "username": self.username,
             "password": self.password
         }
         
         try:
-            # Пушим строго как json=payload, чтобы панель приняла API-авторизацию
             response = await self.client.post(login_url, json=payload)
             
             if response.status_code != 200:
@@ -68,16 +62,14 @@ class XUIClient:
                 return False
                 
         except Exception as e:
-            logger.error(f"Исключение при попытке авторизации в 3x-ui: {e}")
+            logger.error(f"Исключение при попытке авторизации in 3x-ui: {e}")
             return False
 
-
     async def _request(self, method: str, path: str, **kwargs) -> Optional[Dict[str, Any]]:
-        # Обрезаем ведущий слэш, так как httpx корректно объединяет base_url (заканчивающийся на /) и относительный путь
         url = path.lstrip('/')
         try:
             response = await self.client.request(method, url, **kwargs)
-            if response.status_code in [401, 403]:
+            if response.status_code in:
                 if await self.login():
                     response = await self.client.request(method, url, **kwargs)
                 else:
@@ -147,4 +139,5 @@ class XUIClient:
         await self.client.aclose()
 
 xui_client = XUIClient()
+
 
