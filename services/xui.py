@@ -1,6 +1,7 @@
 import logging
 import json
 import uuid
+import urllib.parse
 from typing import Optional, Dict, Any
 import httpx
 from bot.config import config
@@ -9,98 +10,86 @@ logger = logging.getLogger(__name__)
 
 class XUIClient:
     def __init__(self):
-        # Гарантируем, что базовый URL заканчивается слэшем
-        url_str = config.XUI_URL if config.XUI_URL else ""
-        if url_str and not url_str.endswith('/'):
-            url_str += '/'
-        self.full_url = url_str
+        # Читаем адрес из .env (https://188.120.234.166:10569/WgijWp3l2YbP7Fc6Dc)
+        raw_url = config.XUI_URL if config.XUI_URL else ""
+        parsed = urllib.parse.urlparse(raw_url)
+        
+        # Выделяем ЧИСТЫЙ КОРЕНЬ сервера (https://188.120.234.166:10569) строго по OpenAPI
+        self.root_url = f"{parsed.scheme}://{parsed.netloc}/" if raw_url else ""
         
         self.username = config.XUI_USER
         self.password = config.XUI_PASSWORD.get_secret_value() if config.XUI_PASSWORD else ""
         
-        # Дефолтные заголовки для обычных API-запросов панели
-        self.default_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept": "application/json, text/plain, */*",
             "Content-Type": "application/json"
         }
         
+        # Клиент инициализируется на чистый корень IP:ПОРТ
         self.client = httpx.AsyncClient(
-            base_url=self.full_url,
+            base_url=self.root_url,
             timeout=10.0,
             follow_redirects=True,
-            headers=self.default_headers,
+            headers=headers,
             verify=False
         )
 
     async def login(self) -> bool:
-        """
-        Авторизация в API MHSanaei 3.4.2.
-        POST-запрос отправляется СТРОГО на кастомный путь БЕЗ слова login!
-        """
-        if not config.ENABLE_XUI or not self.full_url:
+        """Авторизация по каноничному пути OpenAPI с JSON-телом"""
+        if not config.ENABLE_XUI or not self.root_url:
             logger.warning("Интеграция с 3x-ui отключена или не настроена.")
             return False
 
-        # Относительный путь "./" приклеится к base_url, сохранив финальный слэш:
-        # Получится ровно: https://188.120.234
-        login_url = "./"
-        
+        # Запрос идет строго на https://ip:port/login
+        login_path = "login"
         payload = {
             "username": self.username,
-            "password": self.password
-        }
-        
-        # Специфические заголовки для формы, если панель ожидает Form Data на корне
-        form_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Content-Type": "application/x-www-form-urlencoded"
+            "password": self.password,
+            "twoFactorCode": "" # Пустая строка, если 2FA отключен в панели
         }
         
         try:
-            # Попытка №1: Отправляем как JSON-тело прямо на корень пути
-            logger.info(f"Отправляю корневую JSON-авторизацию на {self.full_url}...")
-            response = await self.client.post(login_url, json=payload)
-            
-            # Попытка №2: Если корень принял запрос, но выдал 403/405 из-за неверного Content-Type, шлем Form Data
-            if response.status_code == 403 or response.status_code == 405:
-                logger.info(f"Корневой JSON вернул {response.status_code}. Пробую Form-Data на корень...")
-                response = await self.client.post(login_url, data=payload, headers=form_headers)
+            # Отправляем СТРОГО json=payload (Content-Type: application/json)
+            response = await self.client.post(login_path, json=payload)
             
             if response.status_code != 200:
-                logger.error(f"Ошибка авторизации 3x-ui на корневом пути. Статус HTTP: {response.status_code}.")
+                logger.error(f"Ошибка авторизации 3x-ui. Статус HTTP: {response.status_code}. Проверьте логин/пароль.")
                 return False
                 
             resp_json = response.json()
             if resp_json.get("success") is True:
-                logger.info("Успешная авторизация в панели 3x-ui на кастомном корне!")
+                logger.info("✅ Успешная авторизация в панели 3x-ui по спецификации OpenAPI!")
                 return True
             else:
-                logger.error(f"Панель вернула ошибку авторизации: {resp_json.get('msg')}")
+                logger.error(f"Панель отклонила учетные данные: {resp_json.get('msg')}")
                 return False
                 
         except Exception as e:
-            logger.error(f"Исключение при попытке корневой авторизации в 3x-ui: {e}")
+            logger.error(f"Исключение при попытке авторизации в 3x-ui: {e}")
             return False
 
-
-
     async def _request(self, method: str, path: str, **kwargs) -> Optional[Dict[str, Any]]:
-        url = path.lstrip('/')
+        # Все рабочие запросы автоматически дополняются вашим кастомным префиксом из .env
+        raw_url = config.XUI_URL if config.XUI_URL else ""
+        parsed = urllib.parse.urlparse(raw_url)
+        base_path = parsed.path.strip("/")
+        
+        # Формируем правильный путь (например, WgijWp3l2YbP7Fc6Dc/panel/api/inbounds/list)
+        full_path = f"{base_path}/{path.lstrip('/')}"
+        
         try:
-            response = await self.client.request(method, url, **kwargs)
-            # ЗАЩИТА: Авто-релогин при протухании куки сессии (401 или 302 редирект на логин)
+            response = await self.client.request(method, full_path, **kwargs)
             if response.status_code == 401 or response.status_code == 302:
                 if await self.login():
-                    response = await self.client.request(method, url, **kwargs)
+                    response = await self.client.request(method, full_path, **kwargs)
                 else:
                     return None
             if response.status_code != 200:
                 return None
             return response.json()
         except Exception as e:
-            logger.error(f"Ошибка API запроса к {url}: {e}")
+            logger.error(f"Ошибка API запроса к {full_path}: {e}")
             return None
 
     async def add_client(self, inbound_id: int, email: str, limit_ip: int = 2) -> Optional[str]:
