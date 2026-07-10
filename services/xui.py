@@ -54,7 +54,7 @@ class XUIClient:
             response = await self.client.post(login_url, json=payload)
             
             # Если панель на данном эндпоинте все же просит Form-Data
-            if response.status_code in:
+            if response.status_code in [403, 405]:
                 logger.info("JSON-авторизация отклонена. Пробую Form-Data на корень...")
                 if "Content-Type" in self.client.headers:
                     del self.client.headers["Content-Type"]
@@ -82,7 +82,7 @@ class XUIClient:
         url = path.lstrip('/')
         try:
             response = await self.client.request(method, url, **kwargs)
-            if response.status_code in [401, 403, 302]:
+             if response.status_code in [401, 302]:
                 if await self.login():
                     response = await self.client.request(method, url, **kwargs)
                 else:
