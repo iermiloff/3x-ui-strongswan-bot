@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import SecretStr, Field
+from pydantic import SecretStr, field_validator
 from typing import List, Optional
+import json
 
 class Settings(BaseSettings):
     # Флаги доступности протоколов
@@ -24,16 +25,27 @@ class Settings(BaseSettings):
     XUI_USER: Optional[str] = None
     XUI_PASSWORD: Optional[SecretStr] = None
 
-    # StrongSwan (Опционально, если ENABLE_STRONGSWAN=True)
-    SSH_HOST: Optional[str] = None
-    SSH_PORT: Optional[int] = 22
-    SSH_USER: Optional[str] = None
-    SSH_KEY_PATH: Optional[str] = None
-
     # CryptoBot
     CRYPTO_BOT_TOKEN: SecretStr
     IS_NET_TEST: bool = True
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # Умный валидатор для ADMIN_IDS, который переварит любой формат из .env
+    @field_validator("ADMIN_IDS", mode="before")
+    @classmethod
+    def parse_admin_ids(cls, v):
+        if isinstance(v, int):
+            return [v]
+        if isinstance(v, str):
+            v = v.strip().strip("[] ,")
+            if not v:
+                return []
+            # Если это строка через запятую
+            if "," in v:
+                return [int(x.strip()) for x in v.split(",") if x.strip()]
+            return [int(v)]
+        return v
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 config = Settings()
+
