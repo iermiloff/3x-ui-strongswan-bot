@@ -38,7 +38,7 @@ async def send_welcome_or_sub(bot: Bot, chat_id: int, db_user: User):
         f"и стабильный нативный IKEv2 (StrongSwan) для iOS/macOS/роутеров без сторонних приложений.\n\n"
         f"⚙️ Выберите интересующий раздел в меню ниже:"
     )
-    await bot.send_message(id=chat_id, text=welcome_text, reply_markup=get_main_menu_keyboard())
+    await bot.send_message(chat_id=chat_id, text=welcome_text, reply_markup=get_main_menu_keyboard())
 
 @user_router.message(CommandStart())
 async def cmd_start(message: Message, db_user: User, bot: Bot):
