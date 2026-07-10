@@ -45,21 +45,15 @@ async def main():
     from bot.middlewares.db import DbSessionMiddleware
     dp.update.middleware(DbSessionMiddleware())
 
-    # РЕГИСТРАЦИЯ ПОЛЬЗОВАТЕЛЬСКОГО РОУТЕРА
+    # РЕГИСТРАЦИЯ РОУТЕРОВ
     from bot.handlers.user import user_router
+    from bot.handlers.admin import admin_router
     dp.include_router(user_router)
+    dp.include_router(admin_router)
 
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
 
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
-
-    # Регистрируем функции, которые выполнятся при старте и остановке
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
-
-    # Запускаем бесконечный цикл опроса серверов Telegram (пропускаем старые апдейты)
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
