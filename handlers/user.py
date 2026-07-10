@@ -388,3 +388,109 @@ async def cb_generate_invoice(callback: CallbackQuery, db_user: User):
             reply_markup=get_tariffs_keyboard()
         )
 
+@user_router.callback_query(F.data.startswith("check_invoice_"))
+async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession):
+    """Ручная проверка статуса инвойса в CryptoBot и выдача боевых ключей"""
+    invoice_id = int(callback.data.split("_")[2])
+    
+    # Запрашиваем информацию у CryptoBot API
+    invoices = await cryptobot_client.get_invoice(invoice_id)
+    if not invoices:
+        await callback.answer("⚠️ Не удалось проверить статус платежа. Попробуйте еще раз.", show_alert=True)
+        return
+        
+    invoice_data = invoices[0]
+    status = invoice_data.get("status")
+    
+    if status != "paid":
+        # Если счет еще не оплачен, просто уведомляем пользователя
+        if status == "active":
+            await callback.answer("⏳ Оплата еще не поступила. Пожалуйста, совершите платеж в @CryptoBot.", show_alert=True)
+        else:
+            await callback.answer(f"❌ Статус счета: {status.upper()}. Оплата невозможна.", show_alert=True)
+        return
+
+    # --- СЧЕТ ОПЛАЧЕН — НАЧИНАЕМ АКТИВАЦИЮ ---
+    await callback.message.edit_text("🎉 <b>Оплата получена!</b>\n⏳ <i>Создаю ваши выделенные VPN-подключения, это займет пару секунд...</i>")
+    
+    payload = invoice_data.get("payload")
+    try:
+        user_id_str, plan_type_str, days_str = payload.split(":")
+        pay_user_id = int(user_id_str)
+        plan_type = SubscriptionType(plan_type_str)
+        duration_days = int(days_str)
+    except Exception as e:
+        logger.error(f"Ошибка парсинга payload {payload}: {e}")
+        await callback.message.edit_text("❌ Внутренняя ошибка обработки платежа. Напишите в поддержку.", reply_markup=get_main_menu_keyboard())
+        return
+
+    # 1. Активируем/продлеваем подписку в БД
+    sub = await create_subscription(db_session, pay_user_id, plan_type, duration_days)
+    
+    issued_keys_text = []
+    
+    # 2. ГЕНЕРАЦИЯ ДЛЯ 3X-UI (доступно и в Base, и в Premium)
+    if config.ENABLE_XUI:
+        try:
+            inbounds = await xui_client.get_inbounds()
+            if inbounds:
+                # В проде здесь можно выбрать конкретный inbound_id (например, Reality)
+                target_inbound = inbounds[0]
+                inbound_id = target_inbound["id"]
+                protocol = target_inbound["protocol"]
+                
+                email = f"user_{pay_user_id}_{uuid.uuid4().hex[:4]}"
+                client_uuid = await xui_client.add_client(inbound_id=inbound_id, email=email)
+                
+                if client_uuid:
+                    config_link = f"{protocol}://{client_uuid}@ваша_нода.com:{target_inbound['port']}?remark=VPN_{protocol.upper()}"
+                    
+                    vpn_key = VPNKey(
+                        subscription_id=sub.id,
+                        protocol_category=ProtocolType.XUI,
+                        protocol_name=protocol.upper(),
+                        client_uuid=client_uuid,
+                        inbound_id=inbound_id,
+                        config_data=config_link
+                    )
+                    db_session.add(vpn_key)
+                    issued_keys_text.append(f"🚀 <b>Ключ {protocol.upper()} (3x-ui):</b>\n<code>{config_link}</code>")
+        except Exception as e:
+            logger.error(f"Ошибка генерации XUI при оплате: {e}")
+
+    # 3. ГЕНЕРАЦИЯ ДЛЯ STRONGSWAN (Только для тарифа Premium)
+    if plan_type == SubscriptionType.PREMIUM and config.ENABLE_STRONGSWAN:
+        try:
+            login = f"user_{pay_user_id}"
+            password = uuid.uuid4().hex[:12]
+            
+            success = await strongswan_client.add_user(login=login, password=password)
+            if success:
+                vpn_key = VPNKey(
+                    subscription_id=sub.id,
+                    protocol_category=ProtocolType.IKEV2,
+                    protocol_name="IKEV2",
+                    client_uuid=login,
+                    config_data=f"{login}:{password}"
+                )
+                db_session.add(vpn_key)
+                issued_keys_text.append(
+                    f"🔐 <b>Выделенный Premium IKEv2 (iOS/macOS):</b>\n"
+                    f"• Сервер: <code>{config.SSH_HOST}</code>\n"
+                    f"• Логин: <code>{login}</code>\n"
+                    f"• Пароль: <code>{password}</code>"
+                )
+        except Exception as e:
+            logger.error(f"Ошибка генерации StrongSwan при оплате: {e}")
+
+    # 4. Выводим результат пользователю
+    expires_str = sub.expires_at.strftime("%d.%m.%Y %H:%M")
+    success_message = (
+        f"✅ <b>Подписка успешно активирована!</b>\n"
+        f"• Тариф: <b>{plan_type.upper()}</b>\n"
+        f"• Срок действия: до <code>{expires_str}</code>\n\n"
+        f"🛒 <b>Ваши доступы:</b>\n\n" + "\n\n".join(issued_keys_text) +
+        f"\n\n📚 Инструкции по настройке для всех устройств доступны в разделе <b>👤 Мой профиль / Ключи</b>."
+    )
+    
+    await callback.message.edit_text(text=success_message, reply_markup=get_main_menu_keyboard())
