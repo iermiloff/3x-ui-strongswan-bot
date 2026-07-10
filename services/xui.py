@@ -16,7 +16,7 @@ class XUIClient:
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=10.0,
-            follow_redirects=True
+            follow_redirects=True,
             verify=False
         )
 
