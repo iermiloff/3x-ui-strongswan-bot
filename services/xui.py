@@ -69,7 +69,7 @@ class XUIClient:
         url = path.lstrip('/')
         try:
             response = await self.client.request(method, url, **kwargs)
-            if response.status_code in:
+            if response.status_code in [401, 403, 302]:
                 if await self.login():
                     response = await self.client.request(method, url, **kwargs)
                 else:
