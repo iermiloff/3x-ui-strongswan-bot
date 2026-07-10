@@ -96,7 +96,7 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
                 # Запрашиваем актуальный streamSettings для каждого инбаунда из панели
                 target_inbound = await xui_client.get_inbound_info(ib.inbound_id)
                 if target_inbound:
-                    email = f"user_{pay_user_id}_{uuid.uuid4().hex[:4]}"
+                    email = f"user_{db_user.telegram_id}_{uuid.uuid4().hex[:4]}"
                     client_uuid = await xui_client.add_client(inbound_id=ib.inbound_id, email=email)
                     
                     if client_uuid:
