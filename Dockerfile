@@ -11,10 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Создаем папку bot внутри контейнера для правильных импортов
+# Создаем структуру, чтобы импорты "from bot.config" работали идеально
 RUN mkdir -p /app/bot
 
-# Копируем файлы вашего корня внутрь /app/bot
+# Копируем файлы вашего корня внутрь папки /app/bot внутри контейнера
 COPY config.py main.py entrypoint.sh alembic.ini /app/bot/
 COPY database/ /app/bot/database/
 COPY handlers/ /app/bot/handlers/
@@ -23,15 +23,15 @@ COPY middlewares/ /app/bot/middlewares/
 COPY services/ /app/bot/services/
 COPY utils/ /app/bot/utils/
 
-# Копируем папки Alembic для миграций
+# Копируем файлы миграций в корень контейнера, где их будет искать alembic.ini
 COPY alembic/ /app/alembic/
 COPY alembic.ini /app/alembic.ini
 
 # Делаем entrypoint исполняемым
 RUN chmod +x /app/bot/entrypoint.sh
 
-# Смещаем рабочую директорию, чтобы скрипты видели .env в /app/bot/
-WORKDIR /app/bot
+# ВАЖНО: Остаемся в корневой директории /app
+WORKDIR /app
 
-# Запускаем через entrypoint
-CMD ["./entrypoint.sh"]
+# Запускаем скрипт из корня
+CMD ["./bot/entrypoint.sh"]
