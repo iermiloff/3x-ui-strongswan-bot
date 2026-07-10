@@ -11,7 +11,7 @@ from bot.database.models import User, Subscription, VPNKey, ProtocolType
 from bot.database.crud import get_total_users_count, get_active_subscriptions_count
 from bot.services.xui import xui_client
 from bot.services.strongswan import strongswan_client
-from database.models import TariffInbound, SubscriptionType
+from bot.database.models import TariffInbound, SubscriptionType
 
 logger = logging.getLogger(__name__)
 admin_router = Router()
