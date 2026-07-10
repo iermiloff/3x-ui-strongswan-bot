@@ -19,7 +19,6 @@ class StrongSwanClient:
             return None
 
         try:
-            # Подключаемся по SSH-ключу, указанному в конфиге
             async with asyncssh.connect(
                 self.host, 
                 port=self.port, 
@@ -34,36 +33,47 @@ class StrongSwanClient:
 
     async def add_user(self, login: str, password: str) -> bool:
         """
-        Добавляет нового пользователя в ipsec.secrets.
-        Формат записи: login : EAP "password"
+        Создает изолированный файл конфигурации для пользователя в swanctl.
+        Путь на сервере: /etc/swanctl/conf.d/user_{login}.conf
         """
-        # Экранируем спецсимволы в пароле и добавляем строку в конец файла
-        cmd = f'echo \'{login} : EAP "{password}"\' >> /etc/ipsec.secrets && ipsec rereadsecrets'
+        file_path = f"/etc/swanctl/conf.d/user_{login}.conf"
         
-        # Если вы используете современный swanctl (StrongSwan 5.9+):
-        # cmd = f'echo "connections {{ eap-{login} {{ secrets {{ eap-{login} {{ id = {login}; secret = {password}; }} }} }} }}" >> /etc/swanctl/conf.d/users.conf && swanctl --reload'
+        # Формируем структуру конфига swanctl для EAP-аутентификации
+        config_content = (
+            f"secrets {{\n"
+            f"    eap-{login} {{\n"
+            f"        id = {login}\n"
+            f"        secret = \"{password}\"\n"
+            f"    }}\n"
+            f"}}\n"
+        )
         
+        # Записываем контент в файл и перезагружаем пул конфигураций swanctl
+        cmd = f"echo '{config_content}' > {file_path} && swanctl --reload"
         result = await self._execute_command(cmd)
         return result is not None
 
     async def delete_user(self, login: str) -> bool:
-        """Полностью удаляет пользователя из конфигурации по логину"""
-        # Удаляем строку, содержащую логин пользователя из файла secrets
-        cmd = f"sed -i '/^{login} /d' /etc/ipsec.secrets && ipsec rereadsecrets"
+        """Полностью удаляет файл конфигурации пользователя"""
+        file_path = f"/etc/swanctl/conf.d/user_{login}.conf"
+        cmd = f"rm -f {file_path} && swanctl --reload"
         result = await self._execute_command(cmd)
         return result is not None
 
     async def set_user_status(self, login: str, password: str, enable: bool) -> bool:
         """
         Включает или выключает пользователя.
-        Для выключения мы просто комментируем его строку знаком #, для включения — раскомментируем.
+        Для выключения мы переименовываем файл (добавляем .disabled), чтобы swanctl его игнорировал.
         """
+        active_path = f"/etc/swanctl/conf.d/user_{login}.conf"
+        disabled_path = f"/etc/swanctl/conf.d/user_{login}.conf.disabled"
+        
         if enable:
-            # Убираем знак комментария # перед логином, если он там был
-            cmd = f"sed -i 's/^#{login}/{login}/' /etc/ipsec.secrets && ipsec rereadsecrets"
+            # Возвращаем файл в активное состояние, если он был отключен
+            cmd = f"[ -f {disabled_path} ] && mv {disabled_path} {active_path} && swanctl --reload || true"
         else:
-            # Ставим знак комментария # в начало строки с логином
-            cmd = f"sed -i 's/^{login}/#{login}/' /etc/ipsec.secrets && ipsec rereadsecrets"
+            # Переименовываем активный файл в .disabled
+            cmd = f"[ -f {active_path} ] && mv {active_path} {disabled_path} && swanctl --reload || true"
             
         result = await self._execute_command(cmd)
         return result is not None
