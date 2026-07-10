@@ -285,3 +285,106 @@ def get_assets_keyboard(plan_type: str, days: str) -> InlineKeyboardMarkup:
         ]
     ])
     return keyboard
+
+from bot.keyboards.user import get_tariffs_keyboard, get_periods_keyboard, get_assets_keyboard
+from bot.services.cryptobot import cryptobot_client
+
+# Фиксированные цены в USD
+PRICES = {
+    "base": {30: 3.0, 90: 8.0, 180: 14.0},     # Базовый тариф (скидки на 3 и 6 месяцев)
+    "premium": {30: 5.0, 90: 13.5, 180: 24.0}  # Премиум тариф
+}
+
+@user_router.callback_query(F.data == "menu_buy")
+async def cb_menu_buy(callback: CallbackQuery):
+    """Экран выбора тарифа"""
+    text = (
+        "💎 <b>Покупка подписки VPN</b>\n\n"
+        "Выберите желаемый уровень доступа:\n\n"
+        "🚀 <b>БАЗОВЫЙ (3x-ui):</b>\n"
+        "• Доступ к быстрым обходам блокировок (VLESS/Trojan)\n"
+        "• Работает через сторонние приложения\n"
+        "• От 3$ в месяц\n\n"
+        "💎 <b>PREMIUM (3x-ui + IKEv2):</b>\n"
+        "• Всё, что есть в базовом тарифе\n"
+        "• + Нативный быстрый протокол <b>IKEv2 StrongSwan</b>\n"
+        "• Идеально для iOS/macOS (настройка прямо в системе за 1 минуту без стороннего софта!)\n"
+        "• От 5$ в месяц"
+    )
+    await callback.message.edit_text(text=text, reply_markup=get_tariffs_keyboard())
+
+@user_router.callback_query(F.data.startswith("buy_plan_"))
+async def cb_buy_plan(callback: CallbackQuery):
+    """Экран выбора периода подписки"""
+    plan_type = callback.data.split("_")[2] # base или premium
+    text = "🗓 <b>Выберите срок действия подписки:</b>\n\nЧем длиннее период, тем больше скидка!"
+    await callback.message.edit_text(text=text, reply_markup=get_periods_keyboard(plan_type))
+
+@user_router.callback_query(F.data.startswith("buy_time_"))
+async def cb_buy_time(callback: CallbackQuery):
+    """Экран выбора криптовалюты"""
+    parts = callback.data.split("_")
+    plan_type = parts[2]
+    days = int(parts[3])
+    
+    price = PRICES[plan_type][days]
+    text = f"💳 <b>Стоимость подписки: {price}$</b>\n\nВыберите криптовалюту, в которой хотите произвести оплату через CryptoBot:"
+    await callback.message.edit_text(text=text, reply_markup=get_assets_keyboard(plan_type, str(days)))
+
+@user_router.callback_query(F.data.startswith("pay_"))
+async def cb_generate_invoice(callback: CallbackQuery, db_user: User):
+    """Генерация счета в CryptoBot"""
+    parts = callback.data.split("_")
+    plan_type = parts[1]
+    days = int(parts[2])
+    asset = parts[3]
+    
+    price = PRICES[plan_type][days]
+    
+    await callback.message.edit_text("⏳ <i>Формирую счет на оплату, пожалуйста, подождите...</i>")
+    
+    # В payload зашиваем ключевую информацию для распознавания платежа: user_id, тип тарифа и дни
+    payload = f"{db_user.telegram_id}:{plan_type}:{days}"
+    description = f"Оплата VPN: тариф {plan_type.upper()} на {days} дней"
+    
+    # Вызываем наш ранее написанный клиент CryptoBot
+    invoice = await cryptobot_client.create_invoice(
+        amount=price,
+        asset=asset,
+        description=description,
+        payload=payload
+    )
+    
+    if invoice and invoice.get("bot_invoice_url"):
+        invoice_url = invoice["bot_invoice_url"]
+        invoice_id = invoice["invoice_id"]
+        
+        # Создаем интерактивную кнопку для перехода к оплате
+        pay_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="💸 Оплатить счет", url=invoice_url)
+            ],
+            [
+                # Кнопка ручной проверки (на случай, если юзер оплатил и вернулся)
+                InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_invoice_{invoice_id}")
+            ],
+            [
+                InlineKeyboardButton(text="⬅️ Отмена", callback_data="menu_buy")
+            ]
+        ])
+        
+        text = (
+            f"🧾 <b>Счет успешно выставлен!</b>\n\n"
+            f"• <b>Тариф:</b> {plan_type.upper()}\n"
+            f"• <b>Срок:</b> {days} дней\n"
+            f"• <b>К оплате:</b> <code>{invoice['amount']}</code> {asset}\n\n"
+            f"Нажмите кнопку ниже, чтобы перейти в @CryptoBot и совершить платеж. "
+            f"После успешной транзакции бот мгновенно активирует вашу подписку."
+        )
+        await callback.message.edit_text(text=text, reply_markup=pay_keyboard)
+    else:
+        await callback.message.edit_text(
+            text="❌ Не удалось связаться с платежной системой CryptoBot. Пожалуйста, попробуйте позже.",
+            reply_markup=get_tariffs_keyboard()
+        )
+
