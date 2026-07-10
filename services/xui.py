@@ -35,63 +35,55 @@ class XUIClient:
 
     async def login(self) -> bool:
         """
-        Официальная авторизация в API MHSanaei 3.4.2 с кастомным путем.
-        Запрос идет на /base_path/login в формате x-www-form-urlencoded (Form Data).
+        Авторизация в API MHSanaei 3.4.2.
+        POST-запрос отправляется СТРОГО на кастомный путь БЕЗ слова login!
         """
         if not config.ENABLE_XUI or not self.full_url:
             logger.warning("Интеграция с 3x-ui отключена или не настроена.")
             return False
 
-        # Адрес склеится ровно в https://ip:port/WgijWp3l2YbP7Fc6Dc/login
-        login_url = "login"
+        # Относительный путь "./" приклеится к base_url, сохранив финальный слэш:
+        # Получится ровно: https://188.120.234
+        login_url = "./"
+        
         payload = {
             "username": self.username,
             "password": self.password
         }
         
-        # Специфические заголовки для формы входа, чтобы веб-сервер панели не выдавал 403
-        login_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        # Специфические заголовки для формы, если панель ожидает Form Data на корне
+        form_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept": "application/json, text/plain, */*",
             "Content-Type": "application/x-www-form-urlencoded"
         }
         
         try:
-            # Отправляем СТРОГО через data=payload (Form Data) с чистыми заголовками формы
-            response = await self.client.post(login_url, data=payload, headers=login_headers)
+            # Попытка №1: Отправляем как JSON-тело прямо на корень пути
+            logger.info(f"Отправляю корневую JSON-авторизацию на {self.full_url}...")
+            response = await self.client.post(login_url, json=payload)
             
-            # Если конкретно в вашей сборке панели API переключено на JSON
+            # Попытка №2: Если корень принял запрос, но выдал 403/405 из-за неверного Content-Type, шлем Form Data
             if response.status_code == 403 or response.status_code == 405:
-                logger.info("JSON-авторизация отклонена. Пробую URL-safe Form-Data на корень...")
-                if "Content-Type" in self.client.headers:
-                    del self.client.headers["Content-Type"]
-                
-                # Явно кодируем спецсимволы в URL-safe формат (например, [ превратится в %5B)
-                import urllib.parse
-                safe_payload = {
-                    "username": self.username,
-                    "password": urllib.parse.quote(self.password)
-                }
-                
-                response = await self.client.post(login_url, data=safe_payload, headers=login_headers)
-                self.client.headers["Content-Type"] = "application/json"
-
+                logger.info(f"Корневой JSON вернул {response.status_code}. Пробую Form-Data на корень...")
+                response = await self.client.post(login_url, data=payload, headers=form_headers)
             
             if response.status_code != 200:
-                logger.error(f"Ошибка авторизации 3x-ui. Статус HTTP: {response.status_code}. Проверьте правильность логина/пароля в .env!")
+                logger.error(f"Ошибка авторизации 3x-ui на корневом пути. Статус HTTP: {response.status_code}.")
                 return False
                 
             resp_json = response.json()
             if resp_json.get("success") is True:
-                logger.info("Успешная авторизация в панели 3x-ui!")
+                logger.info("Успешная авторизация в панели 3x-ui на кастомном корне!")
                 return True
             else:
                 logger.error(f"Панель вернула ошибку авторизации: {resp_json.get('msg')}")
                 return False
                 
         except Exception as e:
-            logger.error(f"Исключение при попытке авторизации в 3x-ui: {e}")
+            logger.error(f"Исключение при попытке корневой авторизации в 3x-ui: {e}")
             return False
+
 
 
     async def _request(self, method: str, path: str, **kwargs) -> Optional[Dict[str, Any]]:
