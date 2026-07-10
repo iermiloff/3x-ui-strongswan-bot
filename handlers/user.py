@@ -3,7 +3,7 @@ import logging
 import uuid
 from aiogram import Router, Bot, F
 from aiogram.filters import CommandStart
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.utils.qr import create_qr_code_file
