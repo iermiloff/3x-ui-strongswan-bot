@@ -388,10 +388,23 @@ async def cb_generate_invoice(callback: CallbackQuery, db_user: User):
             reply_markup=get_tariffs_keyboard()
         )
 
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
+
+# Определяем техническое состояние для защиты от спама кнопкой
+class PaymentStates(StatesGroup):
+    processing = State()
+
 @user_router.callback_query(F.data.startswith("check_invoice_"))
-async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession):
-    """Ручная проверка статуса инвойса в CryptoBot и выдача боевых ключей"""
-    invoice_id = int(callback.data.split("_")[2])
+async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, state: FSMContext):
+    """Ручная проверка статуса инвойса в CryptoBot с защитой от Race Condition"""
+    # 1. Проверяем, не находится ли пользователь уже в процессе активации
+    current_state = await state.get_state()
+    if current_state == PaymentStates.processing.state:
+        await callback.answer("⏳ Платеж уже обрабатывается, пожалуйста, подождите...", show_alert=True)
+        return
+
+    invoice_id = int(callback.data.split("_"))
     
     # Запрашиваем информацию у CryptoBot API
     invoices = await cryptobot_client.get_invoice(invoice_id)
@@ -399,18 +412,19 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession):
         await callback.answer("⚠️ Не удалось проверить статус платежа. Попробуйте еще раз.", show_alert=True)
         return
         
-    invoice_data = invoices[0]
+    invoice_data = invoices
     status = invoice_data.get("status")
     
     if status != "paid":
-        # Если счет еще не оплачен, просто уведомляем пользователя
         if status == "active":
             await callback.answer("⏳ Оплата еще не поступила. Пожалуйста, совершите платеж в @CryptoBot.", show_alert=True)
         else:
             await callback.answer(f"❌ Статус счета: {status.upper()}. Оплата невозможна.", show_alert=True)
         return
 
-    # --- СЧЕТ ОПЛАЧЕН — НАЧИНАЕМ АКТИВАЦИЮ ---
+    # --- СЧЕТ ОПЛАЧЕН — ВКЛЮЧАЕМ БЛОКИРОВКУ СЕССИИ ---
+    await state.set_state(PaymentStates.processing)
+    
     await callback.message.edit_text("🎉 <b>Оплата получена!</b>\n⏳ <i>Создаю ваши выделенные VPN-подключения, это займет пару секунд...</i>")
     
     payload = invoice_data.get("payload")
@@ -421,21 +435,21 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession):
         duration_days = int(days_str)
     except Exception as e:
         logger.error(f"Ошибка парсинга payload {payload}: {e}")
+        await state.clear() # Сбрасываем блокировку при ошибке
         await callback.message.edit_text("❌ Внутренняя ошибка обработки платежа. Напишите в поддержку.", reply_markup=get_main_menu_keyboard())
         return
 
-    # 1. Активируем/продлеваем подписку в БД
+    # 2. Активируем/продлеваем подписку в БД
     sub = await create_subscription(db_session, pay_user_id, plan_type, duration_days)
     
     issued_keys_text = []
     
-    # 2. ГЕНЕРАЦИЯ ДЛЯ 3X-UI (доступно и в Base, и в Premium)
+    # 3. ГЕНЕРАЦИЯ ДЛЯ 3X-UI
     if config.ENABLE_XUI:
         try:
             inbounds = await xui_client.get_inbounds()
             if inbounds:
-                # В проде здесь можно выбрать конкретный inbound_id (например, Reality)
-                target_inbound = inbounds[0]
+                target_inbound = inbounds
                 inbound_id = target_inbound["id"]
                 protocol = target_inbound["protocol"]
                 
@@ -458,7 +472,7 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession):
         except Exception as e:
             logger.error(f"Ошибка генерации XUI при оплате: {e}")
 
-    # 3. ГЕНЕРАЦИЯ ДЛЯ STRONGSWAN (Только для тарифа Premium)
+    # 4. ГЕНЕРАЦИЯ ДЛЯ STRONGSWAN
     if plan_type == SubscriptionType.PREMIUM and config.ENABLE_STRONGSWAN:
         try:
             login = f"user_{pay_user_id}"
@@ -469,7 +483,7 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession):
                 vpn_key = VPNKey(
                     subscription_id=sub.id,
                     protocol_category=ProtocolType.IKEV2,
-                    protocol_name="IKEV2",
+                    protocol_name="IKEv2",
                     client_uuid=login,
                     config_data=f"{login}:{password}"
                 )
@@ -483,7 +497,12 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession):
         except Exception as e:
             logger.error(f"Ошибка генерации StrongSwan при оплате: {e}")
 
-    # 4. Выводим результат пользователю
+    # Жестко пушим изменения в PostgreSQL перед отправкой сообщения
+    await db_session.commit()
+    
+    # 5. СНИМАЕМ БЛОКИРОВКУ И ВЫВОДИМ РЕЗУЛЬТАТ
+    await state.clear()
+
     expires_str = sub.expires_at.strftime("%d.%m.%Y %H:%M")
     success_message = (
         f"✅ <b>Подписка успешно активирована!</b>\n"
@@ -494,3 +513,4 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession):
     )
     
     await callback.message.edit_text(text=success_message, reply_markup=get_main_menu_keyboard())
+
