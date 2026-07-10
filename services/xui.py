@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 class XUIClient:
     def __init__(self):
-        # Базовый URL со всеми путями (https://188.120.234)
         url_str = config.XUI_URL if config.XUI_URL else ""
         if url_str and not url_str.endswith('/'):
             url_str += '/'
@@ -19,13 +18,15 @@ class XUIClient:
         self.username = config.XUI_USER
         self.password = config.XUI_PASSWORD.get_secret_value() if config.XUI_PASSWORD else ""
         
-        # Оставляем только базовый User-Agent, Content-Type не захардкоживаем!
+        # Эмулируем полноценный браузерный контекст, подставляя Referer и Origin
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json, text/plain, */*"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Origin": self.full_url.rstrip('/'),
+            "Referer": self.full_url
         }
         
-        # Клиент инициализируется строго на полный путь с префиксом
         self.client = httpx.AsyncClient(
             base_url=self.full_url,
             timeout=10.0,
@@ -33,6 +34,7 @@ class XUIClient:
             headers=headers,
             verify=False
         )
+
 
     async def login(self) -> bool:
         """Авторизация по строгому стандарту предоставленного openapi.json"""
