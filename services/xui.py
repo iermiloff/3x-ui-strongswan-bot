@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 class XUIClient:
     def __init__(self):
+        # Гарантируем, что базовый URL заканчивается слэшем
         url_str = config.XUI_URL if config.XUI_URL else ""
         if url_str and not url_str.endswith('/'):
             url_str += '/'
@@ -17,7 +18,8 @@ class XUIClient:
         self.username = config.XUI_USER
         self.password = config.XUI_PASSWORD.get_secret_value() if config.XUI_PASSWORD else ""
         
-        headers = {
+        # Дефолтные заголовки для обычных API-запросов панели
+        self.default_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "application/json, text/plain, */*",
             "Content-Type": "application/json"
@@ -27,35 +29,43 @@ class XUIClient:
             base_url=self.full_url,
             timeout=10.0,
             follow_redirects=True,
-            headers=headers,
+            headers=self.default_headers,
             verify=False
         )
 
     async def login(self) -> bool:
         """
-        Авторизация в API MHSanaei 3.4.2.
-        POST-запрос отправляется строго на кастомный путь со слэшем на конце!
+        Официальная авторизация в API MHSanaei 3.4.2 с кастомным путем.
+        Запрос идет на /base_path/login в формате x-www-form-urlencoded (Form Data).
         """
         if not config.ENABLE_XUI or not self.full_url:
             logger.warning("Интеграция с 3x-ui отключена или не настроена.")
             return False
 
-        login_url = "./"
+        # Адрес склеится ровно в https://ip:port/WgijWp3l2YbP7Fc6Dc/login
+        login_url = "login"
         payload = {
             "username": self.username,
             "password": self.password
         }
         
+        # Специфические заголовки для формы входа, чтобы веб-сервер панели не выдавал 403
+        login_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        
         try:
-            response = await self.client.post(login_url, json=payload)
+            # Отправляем СТРОГО через data=payload (Form Data) с чистыми заголовками формы
+            response = await self.client.post(login_url, data=payload, headers=login_headers)
             
-            # ЗАЩИТА: Заменили 'in' на прямое сравнение, чтобы разметка Markdown больше ничего не резала
+            # Если конкретно в вашей сборке панели API переключено на JSON
             if response.status_code == 403 or response.status_code == 405:
-                logger.info("JSON-авторизация отклонена. Пробую Form-Data на корень...")
-                if "Content-Type" in self.client.headers:
-                    del self.client.headers["Content-Type"]
-                response = await self.client.post(login_url, data=payload)
-                self.client.headers["Content-Type"] = "application/json"
+                logger.info("Форма входа отклонена. Пробую JSON-авторизацию...")
+                json_headers = login_headers.copy()
+                json_headers["Content-Type"] = "application/json"
+                response = await self.client.post(login_url, json=payload, headers=json_headers)
             
             if response.status_code != 200:
                 logger.error(f"Ошибка авторизации 3x-ui. Статус HTTP: {response.status_code}. Проверьте правильность логина/пароля в .env!")
@@ -72,6 +82,7 @@ class XUIClient:
         except Exception as e:
             logger.error(f"Исключение при попытке авторизации в 3x-ui: {e}")
             return False
+
 
     async def _request(self, method: str, path: str, **kwargs) -> Optional[Dict[str, Any]]:
         url = path.lstrip('/')
