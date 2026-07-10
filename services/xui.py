@@ -40,21 +40,17 @@ class XUIClient:
             logger.warning("Интеграция с 3x-ui отключена или не настроена.")
             return False
 
-        # Использование "./" заставляет httpx сохранить финальный слэш из base_url
-        # Запрос уйдет ровно на: https://188.120.234
         login_url = "./"
-        
         payload = {
             "username": self.username,
             "password": self.password
         }
         
         try:
-            # Отправляем строго как JSON-тело
             response = await self.client.post(login_url, json=payload)
             
-            # Если панель на данном эндпоинте все же просит Form-Data
-            if response.status_code in [403, 405]:
+            # ЗАЩИТА: Заменили 'in' на прямое сравнение, чтобы разметка Markdown больше ничего не резала
+            if response.status_code == 403 or response.status_code == 405:
                 logger.info("JSON-авторизация отклонена. Пробую Form-Data на корень...")
                 if "Content-Type" in self.client.headers:
                     del self.client.headers["Content-Type"]
@@ -62,7 +58,7 @@ class XUIClient:
                 self.client.headers["Content-Type"] = "application/json"
             
             if response.status_code != 200:
-                logger.error(f"Ошибка авторизации 3x-ui. Статус HTTP: {response.status_code}. Проверьте правильность логина/пароля in .env!")
+                logger.error(f"Ошибка авторизации 3x-ui. Статус HTTP: {response.status_code}. Проверьте правильность логина/пароля в .env!")
                 return False
                 
             resp_json = response.json()
@@ -77,12 +73,12 @@ class XUIClient:
             logger.error(f"Исключение при попытке авторизации в 3x-ui: {e}")
             return False
 
-
     async def _request(self, method: str, path: str, **kwargs) -> Optional[Dict[str, Any]]:
         url = path.lstrip('/')
         try:
             response = await self.client.request(method, url, **kwargs)
-             if response.status_code in [401, 302]:
+            # ЗАЩИТА: Авто-релогин при протухании куки сессии (401 или 302 редирект на логин)
+            if response.status_code == 401 or response.status_code == 302:
                 if await self.login():
                     response = await self.client.request(method, url, **kwargs)
                 else:
