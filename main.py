@@ -32,7 +32,7 @@ async def on_shutdown(bot: Bot):
     if config.ENABLE_XUI:
         await xui_client.close()
     logger.info("Бот успешно остановлен.")
-
+    
 async def main():
     bot = Bot(
         token=config.BOT_TOKEN.get_secret_value(),
@@ -41,9 +41,13 @@ async def main():
     
     dp = Dispatcher()
 
-    # ИМПОРТИРУЕМ И РЕГИСТРИРУЕМ НАШУ МИДЛВАРЬ ДЛЯ БАЗЫ ДАННЫХ
+    # Мидлварь для базы данных
     from bot.middlewares.db import DbSessionMiddleware
     dp.update.middleware(DbSessionMiddleware())
+
+    # РЕГИСТРАЦИЯ ПОЛЬЗОВАТЕЛЬСКОГО РОУТЕРА
+    from bot.handlers.user import user_router
+    dp.include_router(user_router)
 
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
