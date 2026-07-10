@@ -17,6 +17,7 @@ class XUIClient:
             base_url=self.base_url,
             timeout=10.0,
             follow_redirects=True
+            verify=False
         )
 
     async def login(self) -> bool:
