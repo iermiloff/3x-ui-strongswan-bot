@@ -116,23 +116,39 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
             logger.error(f"Ошибка мульти-генерации XUI: {e}")
 
 
-    # 4. Итог операции
+    # 4. Итог операции (Триал)
     if has_created_any:
         await update_free_trial_timestamp(db_session, db_user.telegram_id)
-
+        await db_session.commit()
+        
         result_text = (
             "🎁 <b>Тестовый период успешно активирован на 1 день!</b>\n\n"
-            "Ваш доступ к конфигурации:\n\n" + "\n\n".join(issued_keys_info) + 
-            "\n\n⚠️ Ссылка закроется автоматически через 24 часа. Отсканируйте QR-код ниже для быстрой настройки!"
+            "🛒 <b>Ваш доступ к конфигурациям:</b>\n\n" + "\n\n".join(issued_keys_info) + 
+            "\n\n⚠️ Ссылки закроются автоматически ровно через 24 часа."
+        )
+        
+        # Удаляем промежуточное сообщение "Генерирую..."
+        await callback.message.delete()
+        
+        # Сначала отправляем полный текст без риска переполнения лимитов картинки
+        await callback.message.answer(text=result_text, reply_markup=get_main_menu_keyboard())
+        
+        # Если есть хоть одна ссылка 3x-ui, отправляем ОДИН QR-код вторым сообщением
+        if config.ENABLE_XUI and config_link:
+            try:
+                qr_file = create_qr_code_file(config_link, filename="trial_qr.png")
+                await callback.message.answer_photo(
+                    photo=qr_file, 
+                    caption="📱 <b>QR-код для быстрого импорта первого ключа:</b>\nОтсканируйте камерой в приложении v2rayNG / FoXray."
+                )
+            except Exception as e:
+                logger.error(f"Ошибка отправки QR-кода триала: {e}")
+    else:
+        await callback.message.edit_text(
+            text="❌ Извините, произошла техническая ошибка при генерации ключа. Обратитесь в поддержку.",
+            reply_markup=get_main_menu_keyboard()
         )
 
-        # Если у нас есть ссылка XUI, генерируем под неё QR-код
-        if config.ENABLE_XUI and config_link:
-            qr_file = create_qr_code_file(config_link, filename="trial_qr.png")
-            await callback.message.delete() # Удаляем старое текстовое сообщение "Генерирую..."
-            await callback.message.answer_photo(photo=qr_file, caption=result_text, reply_markup=get_main_menu_keyboard())
-        else:
-            await callback.message.edit_text(text=result_text, reply_markup=get_main_menu_keyboard())
 
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select
@@ -578,7 +594,7 @@ import asyncio
     # Фиксируем изменения в базе данных
     await db_session.commit()
     
-    # 5. СНИМАЕМ БЛОКИРОВКУ И ВЫВОДИМ РЕЗУЛЬТАТ
+    # 5. СНИМАЕМ БЛОКИРОВКУ И ВЫВОДИМ РЕЗУЛЬТАТ (Оплата)
     await state.clear()
 
     expires_str = sub.expires_at.strftime("%d.%m.%Y %H:%M")
@@ -586,16 +602,25 @@ import asyncio
         f"✅ <b>Подписка успешно активирована!</b>\n"
         f"• Тариф: <b>{plan_type.upper()}</b>\n"
         f"• Срок действия: до <code>{expires_str}</code>\n\n"
-        f"🛒 <b>Ваши доступы:</b>\n\n" + "\n\n".join(issued_keys_text) +
+        f"🛒 <b>Ваши доступы к конфигурациям:</b>\n\n" + "\n\n".join(issued_keys_text) +
         f"\n\n📚 Инструкции по настройке доступны в разделе <b>👤 Мой профиль / Ключи</b>."
     )
-
-    # Ищем ссылку XUI среди сгенерированных ключей для создания QR
+    
+    # Удаляем сообщение "Создаю ваши подключения..."
+    await callback.message.delete()
+    
+    # Отправляем основной текст (лимит 4096 символов, гарантированно вместит все ключи)
+    await callback.message.answer(text=success_message, reply_markup=get_main_menu_keyboard())
+    
+    # Ищем самый первый ключ XUI для отправки одного QR-кода
     xui_key = next((k for k in sub.keys if k.protocol_category == ProtocolType.XUI), None)
     if xui_key:
-        qr_file = create_qr_code_file(xui_key.config_data, filename="vpn_paid_qr.png")
-        await callback.message.delete()
-        await callback.message.answer_photo(photo=qr_file, caption=success_message, reply_markup=get_main_menu_keyboard())
-    else:
-        await callback.message.edit_text(text=success_message, reply_markup=get_main_menu_keyboard())
+        try:
+            qr_file = create_qr_code_file(xui_key.config_data, filename="vpn_paid_qr.png")
+            await callback.message.answer_photo(
+                photo=qr_file, 
+                caption=f"📱 <b>QR-код для импорта ключа {xui_key.protocol_name}:</b>\nОстальные QR-коды и параметры конфигураций доступны внутри вашего личного кабинета."
+            )
+        except Exception as e:
+            logger.error(f"Ошибка отправки QR-кода оплаты: {e}")
 
