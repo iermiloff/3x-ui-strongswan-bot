@@ -1,6 +1,6 @@
 import datetime
 import logging
-from apscheduler.schedulers.asyncio import AsyncioScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
@@ -72,7 +72,7 @@ async def deactivate_expired_subscriptions():
 
 def setup_scheduler():
     """Инициализация и запуск планировщика задач"""
-    scheduler = AsyncioScheduler(timezone="UTC")
+    scheduler = AsyncIOScheduler(timezone="UTC")
     
     # Настраиваем запуск задачи раз в сутки ровно в 03:00 ночи по UTC
     scheduler.add_job(
