@@ -466,8 +466,6 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
     # 2. Активируем/продлеваем подписку в БД
     sub = await create_subscription(db_session, pay_user_id, plan_type, duration_days)
     
-import asyncio
-
     issued_keys_text = []
     
     # Загружаем уже существующие ключи для этой подписки, если это было ПРОДЛЕНИЕ
@@ -484,8 +482,6 @@ import asyncio
             active_tariff_inbounds = res.scalars().all()
 
             for ib in active_tariff_inbounds:
-                # ЗАЩИТА: Если инбаунд удален из панели, get_inbound_info вернет None
-                # Обертываем в таймаут 5 секунд, чтобы бот не завис при сбое сети панели
                 try:
                     target_inbound = await asyncio.wait_for(xui_client.get_inbound_info(ib.inbound_id), timeout=5.0)
                 except asyncio.TimeoutError:
@@ -496,10 +492,8 @@ import asyncio
                     logger.warning(f"Инбаунд {ib.inbound_id} отсутствует в панели 3x-ui. Пропускаю.")
                     continue
 
-                # ПРОВЕРКА НА ПРОДЛЕНИЕ: Если ключ для этого инбаунда уже выдан ранее
                 if ib.inbound_id in existing_keys:
                     old_key = existing_keys[ib.inbound_id]
-                    # Просто включаем его обратно в панели (если он был отключен за просрочку)
                     try:
                         await asyncio.wait_for(
                             xui_client.set_client_status(inbound_id=ib.inbound_id, client_uuid=old_key.client_uuid, enable=True),
@@ -510,7 +504,6 @@ import asyncio
                     issued_keys_text.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}) [Продлен]:</b>\n<code>{old_key.config_data}</code>")
                     continue
 
-                # Если это НОВАЯ покупка для данного инбаунда — генерируем с нуля
                 email = f"user_{pay_user_id}_{uuid.uuid4().hex[:4]}"
                 try:
                     client_uuid = await asyncio.wait_for(
@@ -542,11 +535,8 @@ import asyncio
         try:
             login = f"user_{pay_user_id}"
             
-            # ПРОВЕРКА НА ПРОДЛЕНИЕ STRONGSWAN:
             if existing_ikev2:
-                # Извлекаем старый пароль
                 _, password = existing_ikev2.config_data.split(":", 1)
-                # Просто активируем существующий файл конфигурации обратно (.disabled -> .conf)
                 try:
                     await asyncio.wait_for(
                         strongswan_client.set_user_status(login=login, password=password, enable=True),
@@ -562,7 +552,6 @@ import asyncio
                     f"• Пароль: <code>{password}</code>"
                 )
             else:
-                # Если это первая покупка Премиума — генерируем новый аккаунт
                 password = uuid.uuid4().hex[:12]
                 try:
                     success = await asyncio.wait_for(
@@ -593,7 +582,7 @@ import asyncio
 
     # Фиксируем изменения в базе данных
     await db_session.commit()
-    
+
     # 5. СНИМАЕМ БЛОКИРОВКУ И ВЫВОДИМ РЕЗУЛЬТАТ (Оплата)
     await state.clear()
 
@@ -606,21 +595,16 @@ import asyncio
         f"\n\n📚 Инструкции по настройке доступны в разделе <b>👤 Мой профиль / Ключи</b>."
     )
     
-    # Удаляем сообщение "Создаю ваши подключения..."
     await callback.message.delete()
-    
-    # Отправляем основной текст (лимит 4096 символов, гарантированно вместит все ключи)
     await callback.message.answer(text=success_message, reply_markup=get_main_menu_keyboard())
     
-    # Ищем самый первый ключ XUI для отправки одного QR-кода
     xui_key = next((k for k in sub.keys if k.protocol_category == ProtocolType.XUI), None)
     if xui_key:
         try:
             qr_file = create_qr_code_file(xui_key.config_data, filename="vpn_paid_qr.png")
             await callback.message.answer_photo(
                 photo=qr_file, 
-                caption=f"📱 <b>QR-код для импорта ключа {xui_key.protocol_name}:</b>\nОстальные QR-коды и параметры конфигураций доступны внутри вашего личного кабинета."
+                caption=f"📱 <b>QR-код для импорта ключа {xui_key.protocol_name}:</b>\nОстальные QR-коды доступны в ЛК."
             )
         except Exception as e:
             logger.error(f"Ошибка отправки QR-кода оплаты: {e}")
-
