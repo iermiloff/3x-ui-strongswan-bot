@@ -62,10 +62,20 @@ class XUIClient:
             
             # Если конкретно в вашей сборке панели API переключено на JSON
             if response.status_code == 403 or response.status_code == 405:
-                logger.info("Форма входа отклонена. Пробую JSON-авторизацию...")
-                json_headers = login_headers.copy()
-                json_headers["Content-Type"] = "application/json"
-                response = await self.client.post(login_url, json=payload, headers=json_headers)
+                logger.info("JSON-авторизация отклонена. Пробую URL-safe Form-Data на корень...")
+                if "Content-Type" in self.client.headers:
+                    del self.client.headers["Content-Type"]
+                
+                # Явно кодируем спецсимволы в URL-safe формат (например, [ превратится в %5B)
+                import urllib.parse
+                safe_payload = {
+                    "username": self.username,
+                    "password": urllib.parse.quote(self.password)
+                }
+                
+                response = await self.client.post(login_url, data=safe_payload, headers=login_headers)
+                self.client.headers["Content-Type"] = "application/json"
+
             
             if response.status_code != 200:
                 logger.error(f"Ошибка авторизации 3x-ui. Статус HTTP: {response.status_code}. Проверьте правильность логина/пароля в .env!")
