@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.utils.qr import create_qr_code_file
 from bot.services.link_generator import generate_xui_link
 from bot.config import config
-from bot.database.models import User, SubscriptionType, ProtocolType, VPNKey
+from bot.database.models import User, Subscription, VPNKey, ProtocolType, SubscriptionType, TariffInbound
 from bot.database.crud import check_free_trial_availability, update_free_trial_timestamp, create_subscription
 from bot.keyboards.user import get_main_menu_keyboard
 from bot.services.telegram import check_channel_subscription, get_subscription_keyboard
