@@ -86,3 +86,20 @@ async def get_active_user_subscriptions(session: AsyncSession, user_id: int) -> 
         .where(Subscription.expires_at > now)
     )
     return list(result.scalars().all())
+
+from sqlalchemy import func
+
+async def get_total_users_count(session: AsyncSession) -> int:
+    """Возвращает общее количество зарегистрированных пользователей"""
+    result = await session.execute(select(func.count(User.telegram_id)))
+    return result.scalar() or 0
+
+async def get_active_subscriptions_count(session: AsyncSession) -> int:
+    """Возвращает количество текущих активных подписок"""
+    now = datetime.datetime.utcnow()
+    result = await session.execute(
+        select(func.count(Subscription.id))
+        .where(Subscription.is_active == True)
+        .where(Subscription.expires_at > now)
+    )
+    return result.scalar() or 0
