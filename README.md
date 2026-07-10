@@ -1,6 +1,6 @@
 # 🚀 Hybrid VPN Telegram Bot (3x-ui + StrongSwan)
 
-Асинхронный Telegram-бот на **aiogram 3.x** и **PostgreSQL** для автоматизации продаж и управления подписками VPN. Поддерживает гибридную работу с панелью 3x-ui (любые протоколы: VLESS Reality, Trojan gRPC, Shadowsocks) и нативным протоколом IKEv2 (StrongSwan) для Apple-устройств.
+Асинхронный Telegram-бот на **aiogram 3.x** и **PostgreSQL** для автоматизации продаж и управления подписками VPN. Поддерживает гибридную работу с панелью 3x-ui (любые протоколы: VLESS Reality, Trojan gRPC, Shadowsocks) и нативным протоколом IKEv2 (StrongSwan) для Apple-устройств и роутеров.
 
 ## ✨ Ключевые фичи
 - **Модульность:** Работает как с обеими панелями, так и с любой одной на выбор (настраивается в `.env`).
