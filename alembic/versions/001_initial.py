@@ -51,8 +51,7 @@ def upgrade() -> None:
         sa.Column('config_data', sa.String(length=2048), nullable=False),
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(['subscription_id'], ['subscriptions.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('client_uuid')
+        sa.PrimaryKeyConstraint('id')
     )
 
 def downgrade() -> None:
