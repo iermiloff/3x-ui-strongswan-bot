@@ -669,3 +669,28 @@ async def cb_user_traffic_stats(callback: CallbackQuery, db_user: User):
     # Передаем db_user.telegram_id в клавиатуру главного меню для разделения ролей
     await callback.message.edit_text(text=stats_traffic_text, reply_markup=get_main_menu_keyboard(db_user.telegram_id))
 
+# --- ЛОГИКА КНОПКИ ПОДДЕРЖКИ И СВЯЗИ ---
+@user_router.callback_query(F.data == "menu_support")
+async def cb_user_support_group(callback: CallbackQuery, db_user: User):
+    """Вывод информации о группе поддержки VPN-сервиса"""
+    await callback.answer()
+    
+    text = (
+        "❓ <b>Служба поддержки Overlord VPN</b>\n\n"
+        "Возникли трудности с настройкой, упала скорость или есть вопросы по оплате?\n\n"
+        "Вступайте в нашу официальную группу поддержки. Наша команда и комьюнити "
+        "помогут решить любую проблему в реальном времени!"
+    )
+    
+    # Создаем кнопку-ссылку на вашу группу поддержки из конфига
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="💬 Войти в группу поддержки", url="https://t.me")
+        ],
+        [
+            InlineKeyboardButton(text="⬅️ В главное меню", callback_data="back_to_main")
+        ]
+    ])
+    
+    await callback.message.edit_text(text=text, reply_markup=keyboard)
+
