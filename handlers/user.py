@@ -82,23 +82,26 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
     sub = await create_subscription(db_session, db_user.telegram_id, SubscriptionType.BASE, duration_days=1)
 
     # 3. Интеграция с 3x-ui (XUI)
-    # НОВАЯ МУЛЬТИ-ПРОТОКОЛЬНАЯ ВЫДАЧА 3X-UI
     if config.ENABLE_XUI:
         try:
             # Находим в БД ВСЕ инбаунды, которые админ привязал к текущему тарифу
-            # Для триала жестко ищем SubscriptionType.BASE, для оплаты - plan_type
             target_plan = SubscriptionType.BASE if "trial" in callback.data else plan_type
             
             res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == target_plan))
             active_tariff_inbounds = res.scalars().all()
+            
+            # --- ВОТ СЮДА МЫ ПИХАЕМ НАШ ОСОБЫЙ ЗАПРОС ---
+            # Бот делает один асинхронный запрос списка всех портов (тут есть publicKey)
+            inbounds_list = await xui_client.get_inbounds()
+            if not inbounds_list:
+                inbounds_list = []
             
             for ib in active_tariff_inbounds:
                 email = f"user_{db_user.telegram_id}_{uuid.uuid4().hex[:4]}"
                 client_uuid = await xui_client.add_client(inbound_id=ib.inbound_id, email=email)
                 
                 if client_uuid:
-                    # Вызываем особый запрос общего списка, где MHSanaei отдает publicKey
-                    inbounds_list = await xui_client.get_inbounds()
+                    # Вместо точечного запроса выуживаем инбаунд со всеми ключами из полученного списка
                     target_inbound = next((inb for inb in inbounds_list if inb.get("id") == ib.inbound_id), None)
                     
                     if target_inbound:
@@ -117,6 +120,7 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
                         issued_keys_info.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
         except Exception as e:
             logger.error(f"Ошибка мульти-генерации XUI: {e}")
+
 
     # 4. Итог операции (Триал)
     if has_created_any:
