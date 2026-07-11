@@ -60,8 +60,12 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
                 try: reality_settings = json.loads(reality_settings)
                 except Exception: reality_settings = {}
             
-            query_params["pbk"] = reality_settings.get("publicKey", "")
-            query_params["fp"] = reality_settings.get("fingerprint", "chrome")
+            # ТОЧЕЧНОЕ ИСПРАВЛЕНИЕ: Если из API инбаунда ключ пришел пустым, 
+            # берем его из сохраненного в ОЗУ xui_client при старте!
+            from bot.services.xui import xui_client
+            api_pbk = reality_settings.get("publicKey", "")
+            query_params["pbk"] = api_pbk if api_pbk else xui_client.reality_public_key
+
             
             # ЗАЩИТА: Извлекаем строго первый Short ID, если пришел список (как в 3.4.2)
             short_ids = reality_settings.get("shortIds", [])
