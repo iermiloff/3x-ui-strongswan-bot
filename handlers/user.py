@@ -98,14 +98,17 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
             
             for ib in active_tariff_inbounds:
                 email = f"user_{db_user.telegram_id}_{uuid.uuid4().hex[:4]}"
-                client_uuid = await xui_client.add_client(inbound_id=ib.inbound_id, email=email)
                 
-                if client_uuid:
-                    # Вместо точечного запроса выуживаем инбаунд со всеми ключами из полученного списка
+                # Теперь client_info — это словарь с индивидуальными sid и spx!
+                client_info = await xui_client.add_client(inbound_id=ib.inbound_id, email=email)
+                
+                if client_info and isinstance(client_info, dict):
+                    inbounds_list = await xui_client.get_inbounds()
                     target_inbound = next((inb for inb in inbounds_list if inb.get("id") == ib.inbound_id), None)
                     
                     if target_inbound:
-                        config_link = generate_xui_link(target_inbound, client_uuid, email)
+                        # Передаем словарь client_info вместо чистого UUID
+                        config_link = generate_xui_link(target_inbound, client_info["uuid"], email, client_info)
                         
                         vpn_key = VPNKey(
                             subscription_id=sub.id,
