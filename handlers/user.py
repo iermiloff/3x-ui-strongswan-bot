@@ -144,13 +144,14 @@ async def cb_select_period(callback: CallbackQuery):
     """Меню выбора длительности подписки PREMIUM"""
     await callback.answer()
     keyboard = [
+        # Убедитесь, что числа передаются без лишних пробелов, а callback_query_data указан везде строго!
         [InlineKeyboardButton(text="📅 1 месяц — 3.00 USDT", callback_query_data="period_premium_30_3.0")],
-        [InlineKeyboardButton(text="📅 3 месяца — 8.00 USDT (Скидка 11%)", callback_query_data="period_premium_90_8.0")],
-        [InlineKeyboardButton(text="📅 6 месяцев — 15.00 USDT (Скидка 16%)", callback_query_data="period_premium_180_15.0")],
+        [InlineKeyboardButton(text="📅 3 месяца — 8.00 USDT", callback_query_data="period_premium_90_8.0")],
+        [InlineKeyboardButton(text="📅 6 месяцев — 15.00 USDT", callback_query_data="period_premium_180_15.0")],
         [InlineKeyboardButton(text="🔙 Назад к тарифам", callback_query_data="menu_tariffs")]
     ]
     await callback.message.edit_text(
-        text="📅 <b>На какой срок вы хотите оформить подписку PREMIUM?</b>\n\nПри оформлении на длительный срок активируется автоматическая скидка:",
+        text="📅 <b>Выберите период подписки PREMIUM:</b>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
     )
 
