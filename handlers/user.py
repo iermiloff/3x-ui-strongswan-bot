@@ -38,7 +38,8 @@ async def send_welcome_or_sub(bot: Bot, chat_id: int, db_user: User):
         f"и стабильный нативный IKEv2 (StrongSwan) для iOS/macOS/роутеров без сторонних приложений.\n\n"
         f"⚙️ Выберите интересующий раздел в меню ниже:"
     )
-    await bot.send_message(chat_id=chat_id, text=welcome_text, reply_markup=get_main_menu_keyboard())
+    await bot.send_message(chat_id=chat_id, text=welcome_text, reply_markup=get_main_menu_keyboard(db_user.telegram_id))
+
 
 @user_router.message(CommandStart())
 async def cmd_start(message: Message, db_user: User, bot: Bot):
@@ -157,7 +158,7 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
     else:
         await callback.message.edit_text(
             text="❌ Извините, произошла техническая ошибка при генерации ключа. Обратитесь в поддержку.",
-            reply_markup=get_main_menu_keyboard()
+            reply_markup=get_main_menu_keyboard(db_user.telegram_id)
         )
 
 
@@ -230,7 +231,7 @@ async def cb_back_to_main(callback: CallbackQuery, db_user: User):
         f"👋 Приветствуем{username_str} в нашем VPN-сервисе!\n\n"
         f"⚙️ Выберите интересующий раздел в меню ниже:"
     )
-    await callback.message.answer(text=welcome_text, reply_markup=get_main_menu_keyboard())
+    await callback.message.answer(text=welcome_text, reply_markup=get_main_menu_keyboard(db_user.telegram_id))
 
 # --- ДЕРЕВО МЕНЮ ИНСТРУКЦИЙ ---
 
