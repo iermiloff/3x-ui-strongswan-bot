@@ -92,7 +92,7 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
             res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == target_plan))
             active_tariff_inbounds = res.scalars().all()
 
-                for ib in active_tariff_inbounds:
+        for ib in active_tariff_inbounds:
         # Убедитесь, что здесь ровно 8 пробелов от левого края:
         email = f"user_{db_user.telegram_id}_{uuid.uuid4().hex[:4]}"
         client_uuid = await xui_client.add_client(inbound_id=ib.inbound_id, email=email)
