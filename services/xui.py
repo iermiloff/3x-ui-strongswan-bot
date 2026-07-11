@@ -79,12 +79,11 @@ class XUIClient:
             logger.error(f"Ошибка API запроса к {url}: {e}")
             return None
 
-    async def add_client(self, inbound_id: int, email: str, limit_ip: int = 2) -> Optional[str]:
-        """Новый метод добавления клиента по спецификации OpenAPI 3.x"""
+    async def add_client(self, inbound_id: int, email: str, limit_ip: int = 2) -> Optional[dict]:
+        """Добавление клиента. Возвращает словарь с UUID и индивидуальными настройками маскировки."""
         path = "panel/api/clients/add"
         client_uuid = uuid.uuid4().hex
         
-        # Shape строго по схеме /panel/api/clients/add из openapi.json
         payload = {
             "client": {
                 "email": email,
@@ -93,15 +92,24 @@ class XUIClient:
                 "tgId": 0,
                 "limitIp": limit_ip,
                 "enable": True,
-                "id": client_uuid  # Для VLESS передаем UUID в поле id
+                "id": client_uuid
             },
             "inboundIds": [inbound_id]
         }
         
         response = await self._request("POST", path, json=payload)
         if response and response.get("success") is True:
-            return client_uuid
+            # Вытаскиваем то, что сгенерировала панель конкретно для этого юзера
+            obj_list = response.get("obj", [])
+            client_data = obj_list[0] if isinstance(obj_list, list) and obj_list else {}
+            
+            return {
+                "uuid": client_uuid,
+                "sid": client_data.get("sid", ""),
+                "spx": client_data.get("spx", "")
+            }
         return None
+
 
     async def delete_client(self, inbound_id: int, client_uuid: str) -> bool:
         """В новом API удаление идет по email. Мы используем UUID как уникальный email"""
