@@ -2,6 +2,7 @@ import logging
 import json
 import uuid
 from datetime import datetime, timedelta
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -17,14 +18,13 @@ logger = logging.getLogger(__name__)
 user_router = Router()
 
 def make_fresh_menu_kb() -> InlineKeyboardMarkup:
-    # Функция переименована для гарантированного сброса кэша python-скриптов
-    keyboard = [
-        [InlineKeyboardButton(text="🎁 Бесплатный тест (1 день)", callback_query_data="menu_trial")],
-        [InlineKeyboardButton(text="💎 Купить подписку", callback_query_data="menu_tariffs")],
-        [InlineKeyboardButton(text="👤 Мой профиль / Ключи", callback_query_data="menu_profile")],
-        [InlineKeyboardButton(text="📊 Статистика", callback_query_data="menu_stats")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🎁 Бесплатный тест (1 день)", callback_query_data="menu_trial"))
+    builder.row(InlineKeyboardButton(text="💎 Купить подписку", callback_query_data="menu_tariffs"))
+    builder.row(InlineKeyboardButton(text="👤 Мой профиль / Ключи", callback_query_data="menu_profile"))
+    builder.row(InlineKeyboardButton(text="📊 Статистика", callback_query_data="menu_stats"))
+    return builder.as_markup()
+
 
 @user_router.message(CommandStart())
 async def cmd_start(message: Message, db_session: AsyncSession):
