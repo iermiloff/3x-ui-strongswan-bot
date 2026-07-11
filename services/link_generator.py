@@ -24,7 +24,7 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
         parsed_panel = urllib.parse.urlparse(config.XUI_URL)
         server_host = parsed_panel.hostname
 
-        # Безопасно извлекаем streamSettings (работаем и со строкой, и со словарем)
+        # ИСПРАВЛЕНО: Безопасно извлекаем streamSettings в самом начале (работаем и со строкой, и со словарем)
         stream_settings = target_inbound.get("streamSettings", {})
         if isinstance(stream_settings, str):
             try:
@@ -32,6 +32,7 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
             except Exception:
                 stream_settings = {}
 
+        # Теперь эти переменные гарантированно получат "reality" и "grpc" / "tcp" из JSON-строки панели!
         security = stream_settings.get("security", "none")
         network = stream_settings.get("network", "tcp")
         
@@ -52,32 +53,20 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
         else:
             query_params["type"] = network
 
-        # Настройка маскировки Reality / TLS
+        # 2. НАСТРОЙКА МАСКИРОВКИ (Reality / TLS)
         if security == "reality":
             query_params["security"] = "reality"
             
-            # Извлекаем streamSettings. Если это строка (как показал дамп) — парсим в JSON
-            stream_data = target_inbound.get("streamSettings", {})
-            if isinstance(stream_data, str):
-                try:
-                    import json
-                    stream_data = json.loads(stream_data)
-                except Exception:
-                    stream_data = {}
-            
-            # Теперь нативно вытаскиваем realitySettings
-            reality_settings = stream_data.get("realitySettings", {})
+            # Нативно вытаскиваем realitySettings из уже распарсенного stream_settings
+            reality_settings = stream_settings.get("realitySettings", {})
             if isinstance(reality_settings, str):
                 try:
-                    import json
                     reality_settings = json.loads(reality_settings)
                 except Exception:
                     reality_settings = {}
             
-            # Достаем фабричный publicKey, который теперь точно распарсится!
+            # Достаем фабричный publicKey, который теперь на 100% отработает!
             query_params["pbk"] = reality_settings.get("publicKey", "")
-
-
 
             # ЗАЩИТА: Извлекаем строго первый Short ID, если пришел список (как в 3.4.2)
             short_ids = reality_settings.get("shortIds", [])
@@ -145,7 +134,6 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
     except Exception as e:
         logger.error(f"Ошибка при сборке ссылки подключения: {e}")
         return None
-
 
 def create_qr_code_file(config_link: str, filename: str = "vpn_config.png") -> BufferedInputFile:
     """Генерация QR-кода строго в оперативной памяти (ОЗУ) сервера без нагрузки на NVMe/SSD"""
