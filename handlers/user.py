@@ -685,7 +685,7 @@ async def cb_user_support_group(callback: CallbackQuery, db_user: User):
     # Создаем кнопку-ссылку на вашу группу поддержки из конфига
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="💬 Войти в группу поддержки", url="https://t.me")
+            InlineKeyboardButton(text="💬 Войти в группу поддержки", url="https://t.me/overlordgate")
         ],
         [
             InlineKeyboardButton(text="⬅️ В главное меню", callback_data="back_to_main")
