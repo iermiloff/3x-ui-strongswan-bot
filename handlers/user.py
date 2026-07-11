@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 user_router = Router()
 
 def get_main_menu_keyboard() -> InlineKeyboardMarkup:
+    # ИСПРАВЛЕНО: Добавлен callback_query_data для каждой кнопки главного меню
     keyboard = [
         [InlineKeyboardButton(text="🎁 Бесплатный тест (1 день)", callback_query_data="menu_trial")],
         [InlineKeyboardButton(text="💎 Купить подписку", callback_query_data="menu_tariffs")],
@@ -57,7 +58,7 @@ async def cb_menu_trial(callback: CallbackQuery, db_session: AsyncSession):
     res_user = await db_session.execute(select(User).where(User.telegram_id == tg_id))
     db_user = res_user.scalar()
     
-    if db_user.free_trial_used_at:
+    if db_user and db_user.free_trial_used_at:
         delta = datetime.utcnow() - db_user.free_trial_used_at
         if delta.days < 30:
             await callback.message.answer("❌ Вы уже брали бесплатный тестовый период в этом месяце!\nПовторный тест будет доступен через 30 дней.")
@@ -67,7 +68,7 @@ async def cb_menu_trial(callback: CallbackQuery, db_session: AsyncSession):
     active_tariff_inbounds = res_inbounds.scalars().all()
     
     if not active_tariff_inbounds:
-        await callback.message.answer("❌ Ошибка: В панели администратора бота пока не настроены инбаунды для базового тарифа.")
+        await callback.message.answer("❌ Ошибка: В панели администратора бота пока не настроены порты для базового тарифа.")
         return
 
     sub = Subscription(user_id=tg_id, plan_type=SubscriptionType.BASE, expires_at=datetime.utcnow() + timedelta(days=1))
@@ -114,10 +115,11 @@ async def cb_menu_trial(callback: CallbackQuery, db_session: AsyncSession):
         first_key = res_key.scalars().first()
         if first_key:
             qr_file = create_qr_code_file(first_key.config_data, filename="vpn_trial_qr.png")
-            await callback.message.answer_photo(photo=qr_file, caption="📱 Сканируйте QR-код в v2rayNG / FoXray / Streisand для импорта конфигурации:")
+            await callback.message.answer_photo(photo=qr_file, caption="📱 Сканируйте QR-код для импорта конфигурации:")
     else:
         await db_session.rollback()
         await callback.message.answer("❌ Произошла техническая ошибка при обращении к серверу 3x-ui. Попробуйте позже.")
+
 @user_router.callback_query(F.data == "menu_tariffs")
 async def cb_menu_tariffs(callback: CallbackQuery):
     """Вывод коммерческих тарифных планов"""
@@ -173,6 +175,7 @@ async def cb_create_invoice_page(callback: CallbackQuery):
              f"👉 Для проверки полного цикла работы базы данных и API панели нажмите кнопку симуляции платежа:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
     )
+
 @user_router.callback_query(F.data.startswith("pay_success_"))
 async def cb_process_fake_payment(callback: CallbackQuery, db_session: AsyncSession):
     """
