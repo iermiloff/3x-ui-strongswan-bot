@@ -114,7 +114,7 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
                             subscription_id=sub.id,
                             protocol_category=ProtocolType.XUI,
                             protocol_name=ib.protocol_name.upper(),
-                            client_uuid=client_uuid,
+                            client_uuid=client_info["uuid"],
                             inbound_id=ib.inbound_id,
                             config_data=config_link
                         )
@@ -529,7 +529,7 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
                             subscription_id=sub.id,
                             protocol_category=ProtocolType.XUI,
                             protocol_name=ib.protocol_name.upper(),
-                            client_uuid=client_uuid,
+                            client_uuid=client_info["uuid"],
                             inbound_id=ib.inbound_id,
                             config_data=config_link
                         )
