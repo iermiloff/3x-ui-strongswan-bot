@@ -16,8 +16,8 @@ from bot.services.link_generator import generate_xui_link, create_qr_code_file
 logger = logging.getLogger(__name__)
 user_router = Router()
 
-def get_main_menu_keyboard() -> InlineKeyboardMarkup:
-    # ИСПРАВЛЕНО: Добавлен callback_query_data для каждой кнопки главного меню
+def make_fresh_menu_kb() -> InlineKeyboardMarkup:
+    # Функция переименована для гарантированного сброса кэша python-скриптов
     keyboard = [
         [InlineKeyboardButton(text="🎁 Бесплатный тест (1 день)", callback_query_data="menu_trial")],
         [InlineKeyboardButton(text="💎 Купить подписку", callback_query_data="menu_tariffs")],
@@ -44,12 +44,12 @@ async def cmd_start(message: Message, db_session: AsyncSession):
         f"на 100% защищена от блокировок ТСПУ и глубокого анализа пакетов (DPI).\n\n"
         f"👉 Выберите нужное действие в меню ниже:"
     )
-    await message.answer(text=welcome_text, reply_markup=get_main_menu_keyboard())
+    await message.answer(text=welcome_text, reply_markup=make_fresh_menu_kb())
 
 @user_router.callback_query(F.data == "menu_main")
 async def cb_menu_main(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.edit_text(text="👉 Выберите нужное действие в меню ниже:", reply_markup=get_main_menu_keyboard())
+    await callback.message.edit_text(text="👉 Выберите нужное действие в меню ниже:", reply_markup=make_fresh_menu_kb())
 
 @user_router.callback_query(F.data == "menu_trial")
 async def cb_menu_trial(callback: CallbackQuery, db_session: AsyncSession):
@@ -109,7 +109,7 @@ async def cb_menu_trial(callback: CallbackQuery, db_session: AsyncSession):
             f"🛒 <b>Ваш доступ к конфигурации:</b>\n\n" + "\n\n".join(issued_keys_info)
         )
         await callback.message.delete()
-        await callback.message.answer(text=success_msg, reply_markup=get_main_menu_keyboard())
+        await callback.message.answer(text=success_msg, reply_markup=make_fresh_menu_kb())
         
         res_key = await db_session.execute(select(VPNKey).where(VPNKey.subscription_id == sub.id))
         first_key = res_key.scalars().first()
@@ -274,7 +274,7 @@ async def cb_process_fake_payment(callback: CallbackQuery, db_session: AsyncSess
         f"• Срок действия продлен до: <code>{expires_str}</code>\n\n"
         f"🛒 <b>Ваш доступ к конфигурациям:</b>\n\n" + "\n\n".join(issued_keys_text)
     )
-    await callback.message.answer(text=success_text, reply_markup=get_main_menu_keyboard())
+    await callback.message.answer(text=success_text, reply_markup=make_fresh_menu_kb())
 
 @user_router.callback_query(F.data == "menu_profile")
 async def cb_menu_profile(callback: CallbackQuery, db_session: AsyncSession):
