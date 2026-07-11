@@ -24,7 +24,7 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
         parsed_panel = urllib.parse.urlparse(config.XUI_URL)
         server_host = parsed_panel.hostname
 
-        # ИСПРАВЛЕНО: Безопасно извлекаем streamSettings в самом начале (работаем и со строкой, и со словарем)
+        # Безопасно извлекаем streamSettings (работаем и со строкой, и со словарем)
         stream_settings = target_inbound.get("streamSettings", {})
         if isinstance(stream_settings, str):
             try:
@@ -32,7 +32,6 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
             except Exception:
                 stream_settings = {}
 
-        # Теперь эти переменные гарантированно получат "reality" и "grpc" / "tcp" из JSON-строки панели!
         security = stream_settings.get("security", "none")
         network = stream_settings.get("network", "tcp")
         
@@ -57,7 +56,7 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
         if security == "reality":
             query_params["security"] = "reality"
             
-            # Нативно вытаскиваем realitySettings из уже распарсенного stream_settings
+            # Извлекаем realitySettings из распарсенного stream_settings
             reality_settings = stream_settings.get("realitySettings", {})
             if isinstance(reality_settings, str):
                 try:
@@ -65,8 +64,19 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
                 except Exception:
                     reality_settings = {}
             
-            # Достаем фабричный publicKey, который теперь на 100% отработает!
-            query_params["pbk"] = reality_settings.get("publicKey", "")
+            # Спускаемся во вложенный словарь settings (строго по дампу curl)
+            inner_settings = reality_settings.get("settings", {})
+            if isinstance(inner_settings, str):
+                try:
+                    inner_settings = json.loads(inner_settings)
+                except Exception:
+                    inner_settings = {}
+            
+            # Вытаскиваем долгожданный publicKey из правильного глубокого места
+            query_params["pbk"] = inner_settings.get("publicKey", "")
+            
+            # Оставляем оригинальный отпечаток fingerprint (включая qq) в полном покое
+            query_params["fp"] = inner_settings.get("fingerprint", "")
 
             # ЗАЩИТА: Извлекаем строго первый Short ID, если пришел список (как в 3.4.2)
             short_ids = reality_settings.get("shortIds", [])
@@ -87,8 +97,8 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
                 query_params["sni"] = "google.com"
             
             # Дополнительные специфические параметры Reality (spx)
-            if reality_settings.get("spiderX"):
-                query_params["spx"] = reality_settings.get("spiderX")
+            if inner_settings.get("spiderX"):
+                query_params["spx"] = inner_settings.get("spiderX")
                 
             query_params["authority"] = ""
             
