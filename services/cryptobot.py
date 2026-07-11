@@ -89,8 +89,8 @@ class CryptoBotClient:
                     # Документация: метод возвращает напрямую массив (array of Invoice) внутри поля result
                     invoices_list = resp_json.get("result", [])
                     if isinstance(invoices_list, list) and invoices_list:
-                        # Возвращаем первый найденный инвойс (наш целевой счет)
-                        return invoices_list
+                        # Возвращаем СТРОГО первый элемент списка (конкретный Invoice-словарь)
+                        return invoices_list[0]
                 else:
                     logger.error(f"CryptoBot вернул ok=False в getInvoices: {resp_json}")
                     return None
