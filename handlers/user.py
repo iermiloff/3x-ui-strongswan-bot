@@ -29,7 +29,7 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
 async def cmd_start(message: Message, db_session: AsyncSession):
     tg_id = message.from_user.id
     res = await db_session.execute(select(User).where(User.telegram_id == tg_id))
-    db_user = res.scalar_or_none()
+    db_user = res.scalar()
     
     if not db_user:
         db_user = User(telegram_id=tg_id, username=message.from_user.username)
@@ -55,7 +55,7 @@ async def cb_menu_trial(callback: CallbackQuery, db_session: AsyncSession):
     await callback.answer()
     tg_id = callback.from_user.id
     res_user = await db_session.execute(select(User).where(User.telegram_id == tg_id))
-    db_user = res_user.scalar_or_none()
+    db_user = res_user.scalar()
     
     if db_user.free_trial_used_at:
         delta = datetime.utcnow() - db_user.free_trial_used_at
@@ -191,7 +191,7 @@ async def cb_process_fake_payment(callback: CallbackQuery, db_session: AsyncSess
             Subscription.expires_at > datetime.utcnow()
         )
     )
-    active_sub = res_sub.scalar_or_none()
+    active_sub = res_sub.scalar()
     
     if active_sub:
         active_sub.expires_at += timedelta(days=days)
@@ -229,7 +229,7 @@ async def cb_process_fake_payment(callback: CallbackQuery, db_session: AsyncSess
             res_key = await db_session.execute(
                 select(VPNKey).where(VPNKey.subscription_id == sub_id, VPNKey.inbound_id == ib.inbound_id)
             )
-            old_key = res_key.scalar_or_none()
+            old_key = res_key.scalar()
             if old_key:
                 await xui_client.set_client_status(inbound_id=ib.inbound_id, client_uuid=old_key.client_uuid, enable=True)
                 issued_keys_text.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}) [Продлен]:</b>\n<code>{old_key.config_data}</code>")
