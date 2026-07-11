@@ -55,13 +55,28 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
         # Настройка маскировки Reality / TLS
         if security == "reality":
             query_params["security"] = "reality"
-            reality_settings = stream_settings.get("realitySettings", {})
-            if isinstance(reality_settings, str):
-                try: reality_settings = json.loads(reality_settings)
-                except Exception: reality_settings = {}
             
-            # Просто берем publicKey из переданного словаря инбаунда
+            # Извлекаем streamSettings. Если это строка (как показал дамп) — парсим в JSON
+            stream_data = target_inbound.get("streamSettings", {})
+            if isinstance(stream_data, str):
+                try:
+                    import json
+                    stream_data = json.loads(stream_data)
+                except Exception:
+                    stream_data = {}
+            
+            # Теперь нативно вытаскиваем realitySettings
+            reality_settings = stream_data.get("realitySettings", {})
+            if isinstance(reality_settings, str):
+                try:
+                    import json
+                    reality_settings = json.loads(reality_settings)
+                except Exception:
+                    reality_settings = {}
+            
+            # Достаем фабричный publicKey, который теперь точно распарсится!
             query_params["pbk"] = reality_settings.get("publicKey", "")
+
 
 
             # ЗАЩИТА: Извлекаем строго первый Short ID, если пришел список (как в 3.4.2)
