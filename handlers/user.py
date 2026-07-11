@@ -18,7 +18,7 @@ from bot.services.link_generator import generate_xui_link, create_qr_code_file
 logger = logging.getLogger(__name__)
 user_router = Router()
 
-def make_fresh_menu_kb() -> InlineKeyboardMarkup:
+def get_main_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🎁 Бесплатный тест (1 день)", callback_query_data="menu_trial"))
     builder.row(InlineKeyboardButton(text="💎 Купить подписку", callback_query_data="menu_tariffs"))
@@ -276,7 +276,7 @@ async def cb_process_fake_payment(callback: CallbackQuery, db_session: AsyncSess
         f"• Срок действия продлен до: <code>{expires_str}</code>\n\n"
         f"🛒 <b>Ваш доступ к конфигурациям:</b>\n\n" + "\n\n".join(issued_keys_text)
     )
-    await callback.message.answer(text=success_text, reply_markup=make_fresh_menu_kb())
+    await callback.message.answer(text=success_text, reply_markup=get_main_menu_keyboard())
 
 @user_router.callback_query(F.data == "menu_profile")
 async def cb_menu_profile(callback: CallbackQuery, db_session: AsyncSession):
