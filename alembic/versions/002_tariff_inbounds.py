@@ -21,6 +21,7 @@ def upgrade() -> None:
         sa.Column('protocol_name', sa.String(length=50), nullable=False),
         sa.Column('port', sa.Integer(), nullable=False),
         sa.Column('remark', sa.String(length=255), nullable=False),
+        sa.Column('link_template', sa.Text(), nullable=True),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('inbound_id')
     )
