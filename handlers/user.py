@@ -94,13 +94,13 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
 
             for ib in active_tariff_inbounds:
                 # Запрашиваем актуальный streamSettings для каждого инбаунда из панели
-                target_inbound = await xui_client.get_inbound_info(ib.inbound_id)
-                if target_inbound:
-                    email = f"user_{db_user.telegram_id}_{uuid.uuid4().hex[:4]}"
-                    client_uuid = await xui_client.add_client(inbound_id=ib.inbound_id, email=email)
-                    
-                    if client_uuid:
-                        config_link = generate_xui_link(target_inbound, client_uuid, email)
+
+        inbounds_list = await xui_client.get_inbounds()
+        target_inbound = next((inb for inb in inbounds_list if inb.get("id") == ib.inbound_id), None)
+
+        if target_inbound:
+            config_link = generate_xui_link(target_inbound, client_uuid, email)
+
                         
                         vpn_key = VPNKey(
                             subscription_id=sub.id,
