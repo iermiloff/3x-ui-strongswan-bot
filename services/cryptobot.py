@@ -10,18 +10,18 @@ class CryptoBotClient:
         # Читаем токен и флаг сети из твоего готового конфига .env
         self.api_token = config.CRYPTO_BOT_TOKEN.get_secret_value() if config.CRYPTO_BOT_TOKEN else ""
         
-        # Склеиваем домены кусочками строго по картинке: crypt.bot
+        # Разделяем домен на безопасные кусочки строго по официальной документации Crypto Pay
         p_sub = "testnet-"
         p_main = "pay."
         p_domain = "crypt.bot"
         
-        # СТРОГО РАЗНЫЕ АДРЕСА ДЛЯ ТЕСТА И ПРОДА
+        # Автоматически подставляем правильный базовый URL с обязательным префиксом /api/ на конце!
         if config.IS_NET_TEST:
-            self.base_url = f"https://{p_sub}{p_main}{p_domain}/"
-            logger.info("🤖 Платежи Crypto Pay запущены в режиме TESTNET")
+            self.base_url = f"https://{p_sub}{p_main}{p_domain}/api/"
+            logger.info("🤖 Платежи Crypto Pay инициализированы строго по API документации: Режим TESTNET")
         else:
-            self.base_url = f"https://{p_main}{p_domain}/"
-            logger.info("💎 Платежи Crypto Pay запущены в режиме MAINNET (PRODUCTION)")
+            self.base_url = f"https://{p_main}{p_domain}/api/"
+            logger.info("💎 Платежи Crypto Pay инициализированы строго по API документации: Режим MAINNET")
 
 
     async def _request(self, method: str, endpoint: str, json_data: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
