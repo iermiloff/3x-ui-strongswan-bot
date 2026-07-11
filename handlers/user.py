@@ -45,12 +45,12 @@ async def cmd_start(message: Message, db_session: AsyncSession):
         f"на 100% защищена от блокировок ТСПУ и глубокого анализа пакетов (DPI).\n\n"
         f"👉 Выберите нужное действие в меню ниже:"
     )
-    await message.answer(text=welcome_text, reply_markup=make_fresh_menu_kb())
+    await message.answer(text=welcome_text, reply_markup=get_main_menu_keyboard())
 
 @user_router.callback_query(F.data == "menu_main")
 async def cb_menu_main(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.edit_text(text="👉 Выберите нужное действие в меню ниже:", reply_markup=make_fresh_menu_kb())
+    await callback.message.edit_text(text="👉 Выберите нужное действие в меню ниже:", reply_markup=get_main_menu_keyboard())
 
 @user_router.callback_query(F.data == "menu_trial")
 async def cb_menu_trial(callback: CallbackQuery, db_session: AsyncSession):
