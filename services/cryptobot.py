@@ -18,19 +18,30 @@ class CryptoBotClient:
         # Автоматически подставляем правильный базовый URL с обязательным префиксом /api/ на конце!
         if config.IS_NET_TEST:
             self.base_url = f"https://{p_sub}{p_main}{p_domain}/api/"
-            logger.info("🤖 Платежи Crypto Pay инициализированы строго по API документации: Режим TESTNET")
+            logger.info("🤖 Платежи Crypto Pay инициализированы: Режим TESTNET")
         else:
             self.base_url = f"https://{p_main}{p_domain}/api/"
-            logger.info("💎 Платежи Crypto Pay инициализированы строго по API документации: Режим MAINNET")
+            logger.info("💎 Платежи Crypto Pay инициализированы: Режим MAINNET")
+
+        # ЖЕСТКАЯ ЗАЩИТА: Объявляем headers внутри класса, передавая токен авторизации!
+        self.headers = {
+            "Crypto-Pay-API-Token": self.api_token,
+            "Content-Type": "application/json"
+        }
 
 
     async def _request(self, method: str, endpoint: str, json_data: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """Внутренний метод для выполнения асинхронных запросов к CryptoBot API"""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.request(method, url, headers=self.headers, json=json_data)
-                
+        try:        # Пример правильного асинхронного POST-запроса внутри метода:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}createInvoice", 
+                json=payload, 
+                headers=self.headers,  # Теперь self.headers существует на 100%!
+                timeout=10.0
+            )
+
                 if response.status_code != 200:
                     logger.error(f"CryptoBot API ошибка {endpoint}: {response.status_code} - {response.text}")
                     return None
