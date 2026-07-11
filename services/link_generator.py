@@ -52,7 +52,7 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
         else:
             query_params["type"] = network
 
-        # 2. НАСТРОЙКА ЗАЩИТЫ И МАСКИРОВКИ (Reality / TLS / None)
+        # Настройка маскировки Reality / TLS
         if security == "reality":
             query_params["security"] = "reality"
             reality_settings = stream_settings.get("realitySettings", {})
@@ -60,8 +60,28 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
                 try: reality_settings = json.loads(reality_settings)
                 except Exception: reality_settings = {}
             
-            # Нативно берем publicKey. Если объект пришел из list — он тут будет!
-            query_params["pbk"] = reality_settings.get("publicKey", "")
+            api_pbk = reality_settings.get("publicKey", "")
+            
+            # Если MHSanaei 3.4.2 скрыл ключ в общем списке, забираем его через getRealityKeys
+            if not api_pbk:
+                from bot.services.xui import xui_client
+                import asyncio
+                try:
+                    # Безопасно вытягиваем ключи из асинхронного контекста aiogram 3
+                    loop = asyncio.get_running_loop()
+                    reality_obj = loop.run_until_complete(xui_client.get_reality_keys(target_inbound.get("id")))
+                    if not reality_obj:
+                        # Фолбэк-вариант для разных версий loop
+                        reality_obj = asyncio.run_coroutine_threadsafe(
+                            xui_client.get_reality_keys(target_inbound.get("id")), loop
+                        ).result()
+                    
+                    if reality_obj:
+                        api_pbk = reality_obj.get("publicKey", "")
+                except Exception as e:
+                    logger.error(f"Не удалось получить Reality ключи по API: {e}")
+
+            query_params["pbk"] = api_pbk
 
             # ЗАЩИТА: Извлекаем строго первый Short ID, если пришел список (как в 3.4.2)
             short_ids = reality_settings.get("shortIds", [])
