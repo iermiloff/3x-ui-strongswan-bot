@@ -484,61 +484,50 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
     existing_keys = {k.inbound_id: k for k in existing_keys_res.scalars().all() if k.protocol_category == ProtocolType.XUI}
     existing_ikev2 = next((k for k in existing_keys_res.scalars().all() if k.protocol_category == ProtocolType.IKEV2), None)
 
-    # 1. БЕЗОПАСНАЯ МУЛЬТИ-ГЕНЕРАЦИЯ ДЛЯ 3X-UI
+    # 3. Интеграция с 3x-ui (XUI) для ОПЛАЧЕННЫХ тарифов — МУЛЬТИ-ПРОТОКОЛЬНЫЙ РЕЖИМ
     if config.ENABLE_XUI:
         try:
-            target_plan = SubscriptionType.BASE if "trial" in callback.data else plan_type
-            res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == target_plan))
+            # Находим в БД все порты, привязанные к КУПЛЕННОМУ тарифному плану
+            res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == plan_type))
             active_tariff_inbounds = res.scalars().all()
-
-            for ib in active_tariff_inbounds:
-                try:
-                    target_inbound = await asyncio.wait_for(xui_client.get_inbound_info(ib.inbound_id), timeout=5.0)
-                except asyncio.TimeoutError:
-                    logger.error(f"Таймаут запроса к 3x-ui для инбаунда {ib.inbound_id}")
-                    continue
-
-                if not target_inbound:
-                    logger.warning(f"Инбаунд {ib.inbound_id} отсутствует в панели 3x-ui. Пропускаю.")
-                    continue
-
-                if ib.inbound_id in existing_keys:
-                    old_key = existing_keys[ib.inbound_id]
-                    try:
-                        await asyncio.wait_for(
-                            xui_client.set_client_status(inbound_id=ib.inbound_id, client_uuid=old_key.client_uuid, enable=True),
-                            timeout=5.0
-                        )
-                    except asyncio.TimeoutError:
-                        pass
-                    issued_keys_text.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}) [Продлен]:</b>\n<code>{old_key.config_data}</code>")
-                    continue
-
-                email = f"user_{pay_user_id}_{uuid.uuid4().hex[:4]}"
-                try:
-                    client_uuid = await asyncio.wait_for(
-                        xui_client.add_client(inbound_id=ib.inbound_id, email=email),
-                        timeout=5.0
-                    )
-                except asyncio.TimeoutError:
-                    logger.error(f"Таймаут добавления клиента в 3x-ui для инбаунда {ib.inbound_id}")
-                    continue
+            
+            if active_tariff_inbounds:
+                # Собираем все ID портов купленного тарифа в один массив пачки
+                inbound_ids_pack = [ib.inbound_id for ib in active_tariff_inbounds]
                 
-                if client_uuid:
-                    config_link = generate_xui_link(target_inbound, client_uuid, email)
-                    if config_link:
-                        vpn_key = VPNKey(
-                            subscription_id=sub.id,
-                            protocol_category=ProtocolType.XUI,
-                            protocol_name=ib.protocol_name.upper(),
-                            client_uuid=client_info["uuid"],
-                            inbound_id=ib.inbound_id,
-                            config_data=config_link
-                        )
-                        db_session.add(vpn_key)
-                        issued_keys_text.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
+                # Генерируем ОДИН уникальный email на весь оплаченный период
+                email = f"user_{db_user.telegram_id}_{uuid.uuid4().hex[:4]}"
+                
+                # Разово вызываем метод добавления клиента на ВСЕ инбаунды сразу!
+                client_info = await xui_client.add_client(inbound_ids=inbound_ids_pack, email=email)
+                
+                if client_info and isinstance(client_info, dict):
+                    # Запрашиваем полный список портов панели для разбора ключей маскировки
+                    inbounds_list = await xui_client.get_inbounds()
+                    if not inbounds_list:
+                        inbounds_list = []
+                        
+                    # Бежим циклом только для сборки строк конфигураций под этот UUID
+                    for ib in active_tariff_inbounds:
+                        target_inbound = next((inb for inb in inbounds_list if inb.get("id") == ib.inbound_id), None)
+                        
+                        if target_inbound:
+                            config_link = generate_xui_link(target_inbound, client_info["uuid"], email, client_info)
+                            
+                            vpn_key = VPNKey(
+                                subscription_id=sub.id,
+                                protocol_category=ProtocolType.XUI,
+                                protocol_name=ib.protocol_name.upper(),
+                                client_uuid=client_info["uuid"], # UUID строго одинаковый!
+                                inbound_id=ib.inbound_id,
+                                config_data=config_link
+                            )
+                            db_session.add(vpn_key)
+                            has_created_any = True
+                            issued_keys_info.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
         except Exception as e:
-            logger.error(f"Ошибка мульти-генерации XUI при оплате: {e}")
+            logger.error(f"Ошибка мульти-протокольной генерации КУПЛЕННЫХ ключей XUI: {e}")
+
 
     # 2. БЕЗОПАСНАЯ ГЕНЕРАЦИЯ ДЛЯ STRONGSWAN (IKEv2)
     if plan_type == SubscriptionType.PREMIUM and config.ENABLE_STRONGSWAN:
