@@ -2,19 +2,20 @@ import logging
 import json
 import urllib.parse
 from aiogram import Router, F
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from bot.config import config
-from bot.database.models import TariffInbound, SubscriptionType, User
+from bot.database.models import TariffInbound, SubscriptionType, User, Subscription
 from bot.services.xui import xui_client
 
 logger = logging.getLogger(__name__)
 admin_router = Router()
 
+# Строгий забор на уровне роутера — пускает только администраторов из .env
 @admin_router.message.filter(F.from_user.id.in_(config.ADMIN_IDS))
 @admin_router.callback_query.filter(F.from_user.id.in_(config.ADMIN_IDS))
 
@@ -32,13 +33,20 @@ def get_admin_main_keyboard() -> InlineKeyboardMarkup:
 @admin_router.callback_query(F.data == "menu_stats")
 async def cmd_admin_stats(callback: CallbackQuery, db_session: AsyncSession):
     await callback.answer()
+    
+    # Считаем финансовые и пользовательские метрики в БД
     res_users = await db_session.execute(select(User))
     total_users = len(res_users.scalars().all())
+    
+    res_subs = await db_session.execute(select(Subscription).where(Subscription.expires_at > datetime.utcnow()))
+    active_subs = len(res_subs.scalars().all())
+    
     stats_text = (
-        f"📊 <b>Панель администратора</b>\n\n"
-        f"• Всего зарегистрировано пользователей: <code>{total_users}</code>\n"
-        f"• Статус связи с 3x-ui: <code>Активен (Bearer)</code>\n\n"
-        f"Вы можете настроить распределение портов панели по тарифам ниже:"
+        f"📊 <b>Панель администратора Overlord VPN</b>\n\n"
+        f"• Всего пользователей в БД: <code>{total_users}</code>\n"
+        f"• Активных платных подписок: <code>{active_subs}</code>\n"
+        f"• Токен авторизации 3x-ui: <code>Активен (Bearer Token)</code>\n\n"
+        f"Управляйте распределением портов по тарифам через меню ниже:"
     )
     await callback.message.edit_text(text=stats_text, reply_markup=get_admin_main_keyboard())
 
@@ -51,7 +59,7 @@ async def admin_setup_xui(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="❌ Отмена", callback_query_data="menu_stats")]
     ]
     await callback.message.edit_text(
-        text="👉 Выберите <b>Тарифный план</b>, к которому хотите привязать или отвязать порт панели 3x-ui:",
+        text="👉 Выберите <b>Тарифный план</b>, для которого хотите настроить порты выдачи:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
     )
     await state.set_state(AdminStates.SELECT_PLAN)
@@ -65,7 +73,7 @@ async def admin_select_inbound(callback: CallbackQuery, state: FSMContext, db_se
     
     inbounds = await xui_client.get_inbounds()
     if inbounds is None:
-        await callback.message.edit_text("❌ Ошибка получения списка инбаундов.", reply_markup=get_admin_main_keyboard())
+        await callback.message.edit_text("❌ Ошибка соединения с API 3x-ui.", reply_markup=get_admin_main_keyboard())
         await state.clear()
         return
 
@@ -78,15 +86,17 @@ async def admin_select_inbound(callback: CallbackQuery, state: FSMContext, db_se
         port = ib.get("port")
         protocol = ib.get("protocol", "").upper()
         remark = ib.get("remark", "")
+        
         status_tag = "⚪️"
         if ib_id in current_tariffs:
             status_tag = "🟢 [БАЗОВЫЙ]" if current_tariffs[ib_id].plan_type == SubscriptionType.BASE else "🔵 [PREMIUM]"
-        btn_text = f"{status_tag} ID: {ib_id} | {protocol} (порт: {port}) | {remark}"
+            
+        btn_text = f"{status_tag} ID: {ib_id} | {protocol} ({port}) | {remark}"
         keyboard.append([InlineKeyboardButton(text=btn_text, callback_query_data=f"admin_toggle_ib_{ib_id}")])
         
     keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_query_data="admin_setup_xui")])
     await callback.message.edit_text(
-        text=f"⚙️ <b>Привязка инбаундов к тарифу {selected_plan.value.upper()}</b>",
+        text=f"⚙️ <b>Инбаунды тарифа {selected_plan.value.upper()}</b>\n\nКликните для изменения статуса:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
     )
     await state.set_state(AdminStates.SELECT_INBOUND)
@@ -104,7 +114,7 @@ async def admin_toggle_inbound_process(callback: CallbackQuery, state: FSMContex
         if existing_tariff.plan_type == selected_plan:
             await db_session.delete(existing_tariff)
             await db_session.commit()
-            await callback.answer("ℹ️ Порт успешно отвязан!", show_alert=True)
+            await callback.answer("ℹ️ Инбаунд успешно отключен от бота!", show_alert=True)
         else:
             existing_tariff.plan_type = selected_plan
             inbounds_list = await xui_client.get_inbounds()
@@ -117,7 +127,7 @@ async def admin_toggle_inbound_process(callback: CallbackQuery, state: FSMContex
         inbounds_list = await xui_client.get_inbounds()
         target_raw_inbound = next((ib for ib in inbounds_list if ib.get("id") == selected_inbound_id), None)
         if not target_raw_inbound:
-            await callback.answer("❌ Инбаунд не найден в 3x-ui!", show_alert=True)
+            await callback.answer("❌ Ошибка: Инбаунд удален в панели 3x-ui!", show_alert=True)
             return
             
         link_template = build_secure_template(target_raw_inbound)
@@ -128,7 +138,7 @@ async def admin_toggle_inbound_process(callback: CallbackQuery, state: FSMContex
         )
         db_session.add(new_tariff)
         await db_session.commit()
-        await callback.answer("✅ Шаблон сохранен в БД бота!", show_alert=True)
+        await callback.answer("✅ Инбаунд привязан, шаблон Reality-gRPC сохранен!", show_alert=True)
         
     callback.data = f"admin_plan_{selected_plan.value.lower()}"
     await admin_select_inbound(callback, state, db_session)
@@ -179,4 +189,3 @@ def build_secure_template(ib: dict) -> str:
         return f"ss://{inbound_settings.get('method', 'aes-256-gcm')}:{{uuid}}@{server_host}:{port}#{urllib.parse.quote(remark)}-{{email}}"
         
     return f"{protocol}://{{uuid}}@{server_host}:{port}?{query_string}#{urllib.parse.quote(remark)}-{{email}}"
-
