@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 admin_router = Router()
 
 # Строгий забор на уровне роутера — пускает только администраторов из .env
-@admin_router.message.filter(F.from_user.id.in_(config.ADMIN_IDS))
-@admin_router.callback_query.filter(F.from_user.id.in_(config.ADMIN_IDS))
+admin_router.message.filter(F.from_user.id.in_(config.ADMIN_IDS))
+admin_router.callback_query.filter(F.from_user.id.in_(config.ADMIN_IDS))
 
 class AdminStates(StatesGroup):
     SELECT_PLAN = State()
