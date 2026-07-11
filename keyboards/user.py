@@ -1,8 +1,21 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from bot.config import config
 
-def get_main_menu_keyboard() -> InlineKeyboardMarkup:
-    """Генерирует инлайн-клавиатуру главного меню"""
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+def get_main_menu_keyboard(user_tg_id: int) -> InlineKeyboardMarkup:
+    """Генерирует инлайн-клавиатуру главного меню: разделяет интерфейс админа и пользователя"""
+    # 1. ЕСЛИ НАЖАЛ АДМИНИСТРАТОР (Выдаем строго рабочие админ-кнопки по вашему admin.py)
+    if user_tg_id in config.ADMIN_IDS:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⚙️ Настройка инбаундов 3x-ui", callback_data="adm_xui_inbounds")
+            ],
+            [
+                InlineKeyboardButton(text="📊 Глобальная статистика СУБД", callback_data="admin_main")
+            ]
+        ])
+    
+    # 2. ЕСЛИ НАЖАЛ ОБЫЧНЫЙ ПОЛЬЗОВАТЕЛЬ (Ваша оригинальная раскладка без изменений)
+    return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="👤 Мой профиль / Ключи", callback_data="menu_profile")
         ],
@@ -15,7 +28,6 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="❓ Поддержка", callback_data="menu_support")
         ]
     ])
-    return keyboard
 
 def get_profile_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура внутри личного кабинета"""
@@ -60,3 +72,4 @@ def get_platform_keyboard(protocol_type: str) -> InlineKeyboardMarkup:
         ]
     ])
     return keyboard
+
