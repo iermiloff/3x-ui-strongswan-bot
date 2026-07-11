@@ -608,3 +608,64 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
             )
         except Exception as e:
             logger.error(f"Ошибка отправки QR-кода оплаты: {e}")
+
+# --- ЛОГИКА ПОЛЬЗОВАТЕЛЬСКОЙ СТАТИСТИКИ ТРАФИКА ---
+@user_router.callback_query(F.data == "menu_stats")
+async def cb_user_traffic_stats(callback: CallbackQuery, db_user: User):
+    """
+    Вывод реальной статистики потребления трафика пользователем из панели 3x-ui.
+    Строго соответствует архитектуре CRUD-инъекции проекта Overlord VPN.
+    """
+    await callback.answer()
+    
+    total_up = 0
+    total_down = 0
+    has_stats = False
+    
+    # 1. Запрашиваем актуальный список инбаундов панели 3x-ui для подсчета байт
+    if config.ENABLE_XUI:
+        try:
+            inbounds_list = await xui_client.get_inbounds()
+            if inbounds_list:
+                for ib in inbounds_list:
+                    for stat in ib.get("clientStats", []):
+                        # Ищем все сессии, где email содержит уникальный Telegram ID нашего клиента
+                        if f"user_{db_user.telegram_id}_" in stat.get("email", ""):
+                            total_up += stat.get("up", 0)
+                            total_down += stat.get("down", 0)
+                            has_stats = True
+        except Exception as e:
+            logger.error(f"Ошибка подсчета трафика для юзера {db_user.telegram_id}: {e}")
+
+    if not has_stats:
+        stats_text = (
+            f"📊 <b>Ваша статистика потребления VPN:</b>\n\n"
+            f"• Статус подписки: ❌ <b>Нет активных сессий</b>\n\n"
+            f"Трафик будет отображаться здесь в реальном времени сразу после активации триала или покупки тарифа!"
+        )
+        await callback.message.edit_text(text=stats_text, reply_markup=get_main_menu_keyboard(db_user.telegram_id))
+        return
+
+    # Переводим байты в читаемые Гигабайты/Мегабайты
+    gb_factor = 1024 ** 3
+    mb_factor = 1024 ** 2
+    
+    uploaded = total_up / gb_factor if total_up > gb_factor else total_up / mb_factor
+    uploaded_unit = "GB" if total_up > gb_factor else "MB"
+    
+    downloaded = total_down / gb_factor if total_down > gb_factor else total_down / mb_factor
+    downloaded_unit = "GB" if total_down > gb_factor else "MB"
+    
+    total_spent_gb = (total_up + total_down) / gb_factor
+    
+    stats_traffic_text = (
+        f"📊 <b>Ваша статистика потребления VPN:</b>\n\n"
+        f"• <b>Отправлено (Загрузка):</b> <code>{uploaded:.2f} {uploaded_unit}</code>\n"
+        f"• <b>Скачано (Скачивание):</b> <code>{downloaded:.2f} {downloaded_unit}</code>\n"
+        f"• <b>Суммарный расход:</b> <code>{total_spent_gb:.2f} GB</code>\n\n"
+        f"<i>Счетчики байт обновляются на сервере Xray в реальном времени при подключении устройств.</i>"
+    )
+    
+    # Передаем db_user.telegram_id в клавиатуру главного меню для разделения ролей
+    await callback.message.edit_text(text=stats_traffic_text, reply_markup=get_main_menu_keyboard(db_user.telegram_id))
+
