@@ -79,8 +79,11 @@ class XUIClient:
             logger.error(f"Ошибка API запроса к {url}: {e}")
             return None
 
-    async def add_client(self, inbound_id: int, email: str, limit_ip: int = 2) -> Optional[dict]:
-        """Добавление клиента с поддержкой полей ID и Password для всех протоколов"""
+    async def add_client(self, inbound_ids: list[int], email: str, limit_ip: int = 2) -> Optional[dict]:
+        """
+        Добавление клиента ОДНОЙ ПАЧКОЙ на несколько инбаундов панели разом.
+        Реализует фичу мульти-протокольного UUID.
+        """
         path = "panel/api/clients/add"
         client_uuid = uuid.uuid4().hex
         
@@ -92,10 +95,10 @@ class XUIClient:
                 "tgId": 0,
                 "limitIp": limit_ip,
                 "enable": True,
-                "id": client_uuid,       # Для VLESS
-                "password": client_uuid  # ИСПРАВЛЕНО: Для Trojan строго передаем 32-значный hex сюда!
+                "id": client_uuid,
+                "password": client_uuid
             },
-            "inboundIds": [inbound_id]
+            "inboundIds": inbound_ids  # Передаем готовый массив идентификаторов портов!
         }
         
         response = await self._request("POST", path, json=payload)
@@ -106,7 +109,6 @@ class XUIClient:
                 "spx": ""
             }
         return None
-
 
 
     async def delete_client(self, inbound_id: int, client_uuid: str) -> bool:
