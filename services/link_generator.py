@@ -57,24 +57,30 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str, client
             query_params["pbk"] = inner_settings.get("publicKey", "")
             query_params["fp"] = inner_settings.get("fingerprint", "qq")
 
-            # ЖЕЛЕЗНО: Берем индивидуальный sid созданного клиента, если он пришел из API!
-            if client_info and client_info.get("sid"):
-                query_params["sid"] = client_info["sid"]
+            # Берем самый длинный Short ID из пула (последний в списке 3.4.2), чтобы он выглядел солидно
+            short_ids = reality_settings.get("shortIds", [])
+            if isinstance(short_ids, list) and short_ids:
+                query_params["sid"] = str(short_ids[-1])
+            elif isinstance(short_ids, str):
+                query_params["sid"] = short_ids
             else:
-                short_ids = reality_settings.get("shortIds", [])
-                query_params["sid"] = short_ids[0] if isinstance(short_ids, list) and short_ids else (short_ids if isinstance(short_ids, str) else "")
+                query_params["sid"] = ""
             
-            # Извлекаем первый SNI
             server_names = reality_settings.get("serverNames", ["www.google.com"])
-            query_params["sni"] = server_names[0] if isinstance(server_names, list) and server_names else (server_names if isinstance(server_names, str) else "www.google.com")
-            
-            # ЖЕЛЕЗНО: Берем индивидуальный spx созданного клиента!
-            if client_info and client_info.get("spx"):
-                query_params["spx"] = client_info["spx"]
+            if isinstance(server_names, list) and server_names:
+                query_params["sni"] = str(server_names[0])
+            elif isinstance(server_names, str):
+                query_params["sni"] = server_names
             else:
-                query_params["spx"] = inner_settings.get("spiderX", "/")
+                query_params["sni"] = "www.google.com"
+            
+            # Извлекаем spiderX строго из корневых настроек Reality панели (там, где ://google.com)
+            query_params["spx"] = reality_settings.get("target", "").split(":")[-1] if reality_settings.get("target") else "/"
+            if reality_settings.get("spiderX"):
+                query_params["spx"] = reality_settings.get("spiderX")
                 
             query_params["authority"] = ""
+
             
         elif security == "tls":
             query_params["security"] = "tls"
