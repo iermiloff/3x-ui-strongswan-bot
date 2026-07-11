@@ -7,12 +7,19 @@ def get_main_menu_keyboard(user_tg_id: int) -> InlineKeyboardMarkup:
     if user_tg_id in config.ADMIN_IDS:
         return InlineKeyboardMarkup(inline_keyboard=[
             [
+                InlineKeyboardButton(text="👥 Список и управление клиентами", callback_data="admin_list_users")
+            ],
+            [
+                InlineKeyboardButton(text="➕ Создать клиента вручную", callback_data="admin_create_manual")
+            ],
+            [
                 InlineKeyboardButton(text="⚙️ Настройка инбаундов 3x-ui", callback_data="adm_xui_inbounds")
             ],
             [
                 InlineKeyboardButton(text="📊 Глобальная статистика СУБД", callback_data="admin_main")
             ]
         ])
+
     
     # 2. ЕСЛИ НАЖАЛ ОБЫЧНЫЙ ПОЛЬЗОВАТЕЛЬ (Ваша оригинальная раскладка без изменений)
     return InlineKeyboardMarkup(inline_keyboard=[
