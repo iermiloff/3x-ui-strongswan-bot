@@ -29,7 +29,6 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 
-
 @user_router.message(CommandStart())
 async def cmd_start(message: Message, db_session: AsyncSession):
     tg_id = message.from_user.id
@@ -48,7 +47,19 @@ async def cmd_start(message: Message, db_session: AsyncSession):
         f"на 100% защищена от блокировок ТСПУ и глубокого анализа пакетов (DPI).\n\n"
         f"👉 Выберите нужное действие в меню ниже:"
     )
-    await message.answer(text=welcome_text, reply_markup=get_main_menu_keyboard())
+
+    # ЖЕСТКАЯ ЗАЩИТА: Объявляем матрицу кнопок прямо в теле ответа, полностью исключая кэши функций!
+    direct_keyboard = [
+        [InlineKeyboardButton(text="🎁 Бесплатный тест (1 день)", callback_query_data="menu_trial")],
+        [InlineKeyboardButton(text="💎 Купить подписку", callback_query_data="menu_tariffs")],
+        [InlineKeyboardButton(text="👤 Мой профиль / Ключи", callback_query_data="menu_profile")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_query_data="menu_stats")]
+    ]
+    
+    await message.answer(
+        text=welcome_text, 
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=direct_keyboard)
+    )
 
 @user_router.callback_query(F.data == "menu_main")
 async def cb_menu_main(callback: CallbackQuery):
