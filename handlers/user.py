@@ -81,48 +81,50 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
     # 2. Создаем подписку в БД на 1 день (тип BASE)
     sub = await create_subscription(db_session, db_user.telegram_id, SubscriptionType.BASE, duration_days=1)
 
-    # 3. Интеграция с 3x-ui (XUI)
+    # 3. Интеграция с 3x-ui (XUI) — МУЛЬТИ-ПРОТОКОЛЬНЫЙ РЕЖИМ (Один UUID на все порты)
     if config.ENABLE_XUI:
         try:
-            # Находим в БД ВСЕ инбаунды, которые админ привязал к текущему тарифу
             target_plan = SubscriptionType.BASE if "trial" in callback.data else plan_type
             
             res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == target_plan))
             active_tariff_inbounds = res.scalars().all()
             
-            # --- ВОТ СЮДА МЫ ПИХАЕМ НАШ ОСОБЫЙ ЗАПРОС ---
-            # Бот делает один асинхронный запрос списка всех портов (тут есть publicKey)
-            inbounds_list = await xui_client.get_inbounds()
-            if not inbounds_list:
-                inbounds_list = []
-            
-            for ib in active_tariff_inbounds:
+            if active_tariff_inbounds:
+                # Собираем все ID портов текущего тарифа в один массив пачки
+                inbound_ids_pack = [ib.inbound_id for ib in active_tariff_inbounds]
+                
+                # Генерируем ОДИН уникальный email на весь тариф
                 email = f"user_{db_user.telegram_id}_{uuid.uuid4().hex[:4]}"
                 
-                # Теперь client_info — это словарь с индивидуальными sid и spx!
-                client_info = await xui_client.add_client(inbound_id=ib.inbound_id, email=email)
+                # Разово вызываем метод добавления клиента на ВСЕ инбаунды сразу!
+                client_info = await xui_client.add_client(inbound_ids=inbound_ids_pack, email=email)
                 
                 if client_info and isinstance(client_info, dict):
+                    # Запрашиваем полный список портов панели для разбора ключей маскировки
                     inbounds_list = await xui_client.get_inbounds()
-                    target_inbound = next((inb for inb in inbounds_list if inb.get("id") == ib.inbound_id), None)
-                    
-                    if target_inbound:
-                        # Передаем словарь client_info вместо чистого UUID
-                        config_link = generate_xui_link(target_inbound, client_info["uuid"], email, client_info)
+                    if not inbounds_list:
+                        inbounds_list = []
                         
-                        vpn_key = VPNKey(
-                            subscription_id=sub.id,
-                            protocol_category=ProtocolType.XUI,
-                            protocol_name=ib.protocol_name.upper(),
-                            client_uuid=client_info["uuid"],
-                            inbound_id=ib.inbound_id,
-                            config_data=config_link
-                        )
-                        db_session.add(vpn_key)
-                        has_created_any = True
-                        issued_keys_info.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
+                    # Бежим циклом только для сборки строк конфигураций под этот UUID
+                    for ib in active_tariff_inbounds:
+                        target_inbound = next((inb for inb in inbounds_list if inb.get("id") == ib.inbound_id), None)
+                        
+                        if target_inbound:
+                            config_link = generate_xui_link(target_inbound, client_info["uuid"], email, client_info)
+                            
+                            vpn_key = VPNKey(
+                                subscription_id=sub.id,
+                                protocol_category=ProtocolType.XUI,
+                                protocol_name=ib.protocol_name.upper(),
+                                client_uuid=client_info["uuid"], # UUID везде строго одинаковый!
+                                inbound_id=ib.inbound_id,
+                                config_data=config_link
+                            )
+                            db_session.add(vpn_key)
+                            has_created_any = True
+                            issued_keys_info.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
         except Exception as e:
-            logger.error(f"Ошибка мульти-генерации XUI: {e}")
+            logger.error(f"Ошибка мульти-протокольной генерации XUI: {e}")
 
 
     # 4. Итог операции (Триал)
