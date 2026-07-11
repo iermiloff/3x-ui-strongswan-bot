@@ -30,14 +30,21 @@ class CryptoBotClient:
             "Content-Type": "application/json"
         }
 
-    async def create_invoice(self, amount: float, currency: str, payload: str, description: str = "VPN Subscription") -> Optional[Dict[str, Any]]:
+    async def create_invoice(self, amount: float, currency: str = None, payload: str = None, description: str = "VPN Subscription", asset: str = None) -> Optional[Dict[str, Any]]:
         """
         Создание нового инвойса для оплаты подписки.
-        Строго соответствует странице 4 официальной документации Crypto Pay API.
+        Поддерживает вызов через именованные аргументы 'currency' и 'asset' строго по документации.
         """
         url = f"{self.base_url}createInvoice"
+        
+        # Защита: если оригинальный user.py передает параметр как asset=, подставляем его
+        target_asset = asset if asset else currency
+        if not target_asset:
+            logger.error("Ошибка create_invoice: Не передан обязательный параметр валюты (asset/currency)")
+            return None
+            
         body = {
-            "asset": currency.upper(),
+            "asset": target_asset.upper(),
             "amount": str(amount),
             "description": description,
             "payload": payload,
@@ -83,7 +90,7 @@ class CryptoBotClient:
                     invoices_list = resp_json.get("result", [])
                     if isinstance(invoices_list, list) and invoices_list:
                         # Возвращаем первый найденный инвойс (наш целевой счет)
-                        return invoices_list[0]
+                        return invoices_list
                 else:
                     logger.error(f"CryptoBot вернул ok=False в getInvoices: {resp_json}")
                     return None
