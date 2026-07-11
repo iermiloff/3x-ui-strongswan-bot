@@ -1,254 +1,182 @@
 import logging
-from aiogram import Router, Bot, F
-from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+import json
+import urllib.parse
+from aiogram import Router, F
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
 from bot.config import config
-from bot.database.models import User, Subscription, VPNKey, ProtocolType
-from bot.database.crud import get_total_users_count, get_active_subscriptions_count
+from bot.database.models import TariffInbound, SubscriptionType, User
 from bot.services.xui import xui_client
-from bot.services.strongswan import strongswan_client
-from bot.database.models import TariffInbound, SubscriptionType
 
 logger = logging.getLogger(__name__)
 admin_router = Router()
 
-def get_admin_user_control_keyboard(user_id: int, is_active: bool) -> InlineKeyboardMarkup:
-    """Клавиатура управления конкретным пользователем"""
-    status_text = "⏸ Деактивировать" if is_active else "▶️ Активировать"
-    status_callback = f"adm_status_{user_id}_{'disable' if is_active else 'enable'}"
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text=status_text, callback_data=status_callback)
-        ],
-        [
-            InlineKeyboardButton(text="❌ Полностью удалить", callback_data=f"adm_delete_{user_id}")
-        ]
-    ])
-    return keyboard
+@admin_router.message.filter(F.from_user.id.in_(config.ADMIN_IDS))
+@admin_router.callback_query.filter(F.from_user.id.in_(config.ADMIN_IDS))
+
+class AdminStates(StatesGroup):
+    SELECT_PLAN = State()
+    SELECT_INBOUND = State()
+
+def get_admin_main_keyboard() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton(text="⚙️ Настройка инбаундов 3x-ui", callback_query_data="admin_setup_xui")],
+        [InlineKeyboardButton(text="🔙 В главное меню", callback_query_data="menu_main")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 @admin_router.callback_query(F.data == "menu_stats")
-async def cb_menu_stats(callback: CallbackQuery, db_session: AsyncSession):
-    """Вывод общей статистики (доступно только админам из .env)"""
-    if callback.from_user.id not in config.ADMIN_IDS:
-        await callback.answer("⛔️ У вас нет прав доступа к этому разделу!", show_alert=True)
-        return
-
-    total_users = await get_total_users_count(db_session)
-    active_subs = await get_active_subscriptions_count(db_session)
-
-
+async def cmd_admin_stats(callback: CallbackQuery, db_session: AsyncSession):
+    await callback.answer()
+    res_users = await db_session.execute(select(User))
+    total_users = len(res_users.scalars().all())
     stats_text = (
-        "📊 <b>Панель статистики и управления VPN</b>\n\n"
-        f"• Всего пользователей в БД: <b>{total_users}</b>\n"
-        f"• Активных подписок сейчас: <b>{active_subs}</b>\n\n"
-        f"⚙️ <i>Отправьте /manage ID для управления юзером.</i>"
+        f"📊 <b>Панель администратора</b>\n\n"
+        f"• Всего зарегистрировано пользователей: <code>{total_users}</code>\n"
+        f"• Статус связи с 3x-ui: <code>Активен (Bearer)</code>\n\n"
+        f"Вы можете настроить распределение портов панели по тарифам ниже:"
     )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚙️ Настройка инбаундов 3x-ui", callback_data="adm_xui_inbounds")],
-        [InlineKeyboardButton(text="⬅️ В главное меню", callback_data="back_to_main")]
-    ])
-    await callback.message.edit_text(text=stats_text, reply_markup=keyboard)
+    await callback.message.edit_text(text=stats_text, reply_markup=get_admin_main_keyboard())
 
-@admin_router.callback_query(F.data == "adm_xui_inbounds")
-async def cb_adm_xui_inbounds(callback: CallbackQuery, db_session: AsyncSession):
-    """Выводит список ВСЕХ инбаундов из 3x-ui панели с их текущим тарифом (Безопасная callback_data)"""
-    if callback.from_user.id not in config.ADMIN_IDS: return
-
-    # Подгружаем из API 3x-ui все инбаунды
-    all_inbounds = await xui_client.get_inbounds()
-    if not all_inbounds:
-        await callback.answer("❌ Не удалось получить список инбаундов из 3x-ui", show_alert=True)
-        return
-
-    # Подгружаем из нашей БД инбаунды, которые уже привязаны к тарифам
-    res = await db_session.execute(select(TariffInbound))
-    db_inbounds = {i.inbound_id: i.plan_type for i in res.scalars().all()}
-
-    text = (
-        "⚙️ <b>Настройка распределения протоколов 3x-ui</b>\n\n"
-        "Кликните по инбаунду, чтобы изменить его тарифный план. "
-        "Пользователи получатель ключи от ВСЕХ инбаундов, включенных в их тариф!\n\n"
-    )
-    buttons = []
-
-    for ib in all_inbounds:
-        ib_id = ib["id"]
-        current_plan = db_inbounds.get(ib_id, "❌ ОТКЛЮЧЕН")
-        
-        # Красивый статус для текста кнопки
-        plan_badge = "🟢 BASE" if current_plan == "base" else "💎 PREMIUM" if current_plan == "premium" else "⚪️ НЕАКТИВЕН"
-        btn_text = f"[{ib_id}] {ib['protocol'].upper()} ({ib['remark']}) -> {plan_badge}"
-        
-        # Передаем в callback СТРОГО только ID инбаунда. Строка гарантированно весит до 25 байт.
-        buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"adm_tg_ib_{ib_id}")])
-
-    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_stats")])
-    await callback.message.edit_text(text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-
-@admin_router.callback_query(F.data.startswith("adm_tg_ib_"))
-async def cb_adm_toggle_ib(callback: CallbackQuery, db_session: AsyncSession):
-    """Циклическое переключение тарифа для инбаунда с получением данных внутри Python"""
-    if callback.from_user.id not in config.ADMIN_IDS: return
-    
-    # Извлекаем только ID инбаунда
-    ib_id = int(callback.data.split("_")[-1])
-
-    # Запрашиваем актуальный список инбаундов, чтобы вытащить параметры протокола прямо на сервере
-    all_inbounds = await xui_client.get_inbounds()
-    target_inbound = next((ib for ib in all_inbounds if ib["id"] == ib_id), None) if all_inbounds else None
-    
-    if not target_inbound:
-        await callback.answer("❌ Этот инбаунд больше не существует в панели 3x-ui!", show_alert=True)
-        return
-
-    protocol = target_inbound["protocol"]
-    port = target_inbound["port"]
-    remark = target_inbound["remark"]
-
-    # Ищем инбаунд в нашей БД
-    res = await db_session.execute(select(TariffInbound).where(TariffInbound.inbound_id == ib_id))
-    ib_record = res.scalar_one_or_none()
-
-    if not ib_record:
-        # Если записи не было — ставим BASE тариф
-        new_record = TariffInbound(
-            inbound_id=ib_id, 
-            plan_type=SubscriptionType.BASE, 
-            protocol_name=protocol, 
-            port=port, 
-            remark=remark
-        )
-        db_session.add(new_record)
-    elif ib_record.plan_type == SubscriptionType.BASE:
-        # Если был BASE — переключаем на PREMIUM
-        ib_record.plan_type = SubscriptionType.PREMIUM
-    else:
-        # Если был PREMIUM — полностью отключаем (удаляем привязку)
-        await db_session.delete(ib_record)
-
-    await db_session.commit()
-    await callback.answer("✨ Изменения сохранены!")
-    
-    # Мгновенно обновляем интерфейс админки
-    await cb_adm_xui_inbounds(callback, db_session)
-
-
-@admin_router.message(Command("manage"))
-async def cmd_manage_user(message: Message, db_session: AsyncSession):
-    """Поиск пользователя по ID для управления его доступом"""
-    if message.from_user.id not in config.ADMIN_IDS:
-        return
-
-    # Парсим ID из команды (например, /manage 123456)
-    parts = message.text.split()
-    if len(parts) < 2:
-        await message.answer("⚠️ Использование: <code>/manage TELEGRAM_ID</code>")
-        return
-
-    try:
-        target_id = int(parts[1])
-    except ValueError:
-        await message.answer("❌ ID пользователя должен быть числом.")
-        return
-
-    # Ищем пользователя со всеми его подписками и ключами
-    stmt = select(User).where(User.telegram_id == target_id).options(
-        selectinload(User.subscriptions).selectinload(Subscription.keys)
-    )
-    result = await db_session.execute(stmt)
-    user = result.scalar_one_or_none()
-
-    if not user:
-        await message.answer(f"❌ Пользователь с ID <code>{target_id}</code> не найден в базе данных.")
-        return
-
-    # Проверяем, есть ли у него хоть одна работающая подписка
-    has_active_sub = any(s.is_active for s in user.subscriptions)
-    status_str = "✅ Активен (Есть доступ)" if has_active_sub else "❌ Не активен (Нет доступа)"
-
-    info_text = (
-        f"👤 <b>Управление пользователем</b>\n\n"
-        f"• Telegram ID: <code>{user.telegram_id}</code>\n"
-        f"• Username: @{user.username or 'отсутствует'}\n"
-        f"• Текущий статус: <b>{status_str}</b>\n"
-    )
-    
-    await message.answer(text=info_text, reply_markup=get_admin_user_control_keyboard(user.telegram_id, has_active_sub))
-
-@admin_router.callback_query(F.data.startswith("adm_status_"))
-async def cb_admin_change_status(callback: CallbackQuery, db_session: AsyncSession):
-    """Активация или деактивация всех ключей пользователя на серверах VPN"""
-    if callback.from_user.id not in config.ADMIN_IDS:
-        return
-
-    parts = callback.data.split("_")
-    target_id = int(parts[2])
-    action = parts[3] # 'enable' или 'disable'
-    enable_bool = (action == "enable")
-
-    stmt = select(User).where(User.telegram_id == target_id).options(
-        selectinload(User.subscriptions).selectinload(Subscription.keys)
-    )
-    result = await db_session.execute(stmt)
-    user = result.scalar_one_or_none()
-
-    if not user:
-        await callback.answer("Пользователь не найден.")
-        return
-
-    # Переключаем статус подписок в БД и дергаем API серверов
-    for sub in user.subscriptions:
-        sub.is_active = enable_bool
-        for key in sub.keys:
-            if key.protocol_category == ProtocolType.XUI and config.ENABLE_XUI:
-                await xui_client.set_client_status(inbound_id=key.inbound_id, client_uuid=key.client_uuid, enable=enable_bool)
-            elif key.protocol_category == ProtocolType.IKEV2 and config.ENABLE_STRONGSWAN:
-                # В StrongSwan для выключения комментируем строку в ipsec.secrets
-                try:
-                    l, p = key.config_data.split(":", 1)
-                    await strongswan_client.set_user_status(login=l, password=p, enable=enable_bool)
-                except ValueError:
-                    pass
-
+@admin_router.callback_query(F.data == "admin_setup_xui")
+async def admin_setup_xui(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    keyboard = [
+        [InlineKeyboardButton(text="Базовый (BASE / Триал)", callback_query_data="admin_plan_base")],
+        [InlineKeyboardButton(text="Премиум (PREMIUM)", callback_query_data="admin_plan_premium")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_query_data="menu_stats")]
+    ]
     await callback.message.edit_text(
-        text=f"⚙️ Статус пользователя <code>{target_id}</code> изменен на: <b>{action.upper()}D</b>.",
-        reply_markup=get_admin_user_control_keyboard(target_id, enable_bool)
+        text="👉 Выберите <b>Тарифный план</b>, к которому хотите привязать или отвязать порт панели 3x-ui:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
     )
-    await callback.answer("✅ Статус успешно синхронизирован с VPN-серверами!")
+    await state.set_state(AdminStates.SELECT_PLAN)
 
-@admin_router.callback_query(F.data.startswith("adm_delete_"))
-async def cb_admin_delete_user(callback: CallbackQuery, db_session: AsyncSession):
-    """Полное удаление пользователя и всех его ключей с серверов и из БД"""
-    if callback.from_user.id not in config.ADMIN_IDS:
-        return
-
-    target_id = int(callback.data.split("_")[2])
-
-    stmt = select(User).where(User.telegram_id == target_id).options(
-        selectinload(User.subscriptions).selectinload(Subscription.keys)
-    )
-    result = await db_session.execute(stmt)
-    user = result.scalar_one_or_none()
-
-    if not user:
-        await callback.answer("Пользователь уже удален.")
-        return
-
-    # Удаляем физически со всех серверов
-    for sub in user.subscriptions:
-        for key in sub.keys:
-            if key.protocol_category == ProtocolType.XUI and config.ENABLE_XUI:
-                await xui_client.delete_client(inbound_id=key.inbound_id, client_uuid=key.client_uuid)
-            elif key.protocol_category == ProtocolType.IKEV2 and config.ENABLE_STRONGSWAN:
-                await strongswan_client.delete_user(login=key.client_uuid)
-
-    # Удаляем запись из PostgreSQL (каскадно удалятся подписки и ключи благодаря ForeignKey ondelete="CASCADE")
-    await db_session.delete(user)
+@admin_router.callback_query(F.data.startswith("admin_plan_"))
+async def admin_select_inbound(callback: CallbackQuery, state: FSMContext, db_session: AsyncSession):
+    await callback.answer()
+    plan_str = callback.data.replace("admin_plan_", "").upper()
+    selected_plan = SubscriptionType.BASE if plan_str == "BASE" else SubscriptionType.PREMIUM
+    await state.update_data(selected_plan=selected_plan)
     
-    await callback.message.edit_text(text=f"🗑 Пользователь <code>{target_id}</code> и все его VPN-ключи успешно стерты из системы.")
-    await callback.answer("🔥 Полное удаление завершено", show_alert=True)
+    inbounds = await xui_client.get_inbounds()
+    if inbounds is None:
+        await callback.message.edit_text("❌ Ошибка получения списка инбаундов.", reply_markup=get_admin_main_keyboard())
+        await state.clear()
+        return
+
+    res_tariffs = await db_session.execute(select(TariffInbound))
+    current_tariffs = {t.inbound_id: t for t in res_tariffs.scalars().all()}
+    
+    keyboard = []
+    for ib in inbounds:
+        ib_id = ib.get("id")
+        port = ib.get("port")
+        protocol = ib.get("protocol", "").upper()
+        remark = ib.get("remark", "")
+        status_tag = "⚪️"
+        if ib_id in current_tariffs:
+            status_tag = "🟢 [БАЗОВЫЙ]" if current_tariffs[ib_id].plan_type == SubscriptionType.BASE else "🔵 [PREMIUM]"
+        btn_text = f"{status_tag} ID: {ib_id} | {protocol} (порт: {port}) | {remark}"
+        keyboard.append([InlineKeyboardButton(text=btn_text, callback_query_data=f"admin_toggle_ib_{ib_id}")])
+        
+    keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_query_data="admin_setup_xui")])
+    await callback.message.edit_text(
+        text=f"⚙️ <b>Привязка инбаундов к тарифу {selected_plan.value.upper()}</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+    )
+    await state.set_state(AdminStates.SELECT_INBOUND)
+
+@admin_router.callback_query(F.data.startswith("admin_toggle_ib_"))
+async def admin_toggle_inbound_process(callback: CallbackQuery, state: FSMContext, db_session: AsyncSession):
+    selected_inbound_id = int(callback.data.replace("admin_toggle_ib_", ""))
+    data = await state.get_data()
+    selected_plan = data.get("selected_plan")
+    
+    res = await db_session.execute(select(TariffInbound).where(TariffInbound.inbound_id == selected_inbound_id))
+    existing_tariff = res.scalar_or_none()
+    
+    if existing_tariff:
+        if existing_tariff.plan_type == selected_plan:
+            await db_session.delete(existing_tariff)
+            await db_session.commit()
+            await callback.answer("ℹ️ Порт успешно отвязан!", show_alert=True)
+        else:
+            existing_tariff.plan_type = selected_plan
+            inbounds_list = await xui_client.get_inbounds()
+            target_raw_inbound = next((ib for ib in inbounds_list if ib.get("id") == selected_inbound_id), None)
+            if target_raw_inbound:
+                existing_tariff.link_template = build_secure_template(target_raw_inbound)
+            await db_session.commit()
+            await callback.answer(f"🔄 Перенесено на тариф {selected_plan.value.upper()}!", show_alert=True)
+    else:
+        inbounds_list = await xui_client.get_inbounds()
+        target_raw_inbound = next((ib for ib in inbounds_list if ib.get("id") == selected_inbound_id), None)
+        if not target_raw_inbound:
+            await callback.answer("❌ Инбаунд не найден в 3x-ui!", show_alert=True)
+            return
+            
+        link_template = build_secure_template(target_raw_inbound)
+        new_tariff = TariffInbound(
+            plan_type=selected_plan, inbound_id=selected_inbound_id,
+            protocol_name=target_raw_inbound.get("protocol", "vless").upper(),
+            remark=target_raw_inbound.get("remark", "VPN"), link_template=link_template
+        )
+        db_session.add(new_tariff)
+        await db_session.commit()
+        await callback.answer("✅ Шаблон сохранен в БД бота!", show_alert=True)
+        
+    callback.data = f"admin_plan_{selected_plan.value.lower()}"
+    await admin_select_inbound(callback, state, db_session)
+
+def build_secure_template(ib: dict) -> str:
+    protocol = ib.get("protocol", "").lower()
+    port = ib.get("port")
+    remark = ib.get("remark", "VPN")
+    server_host = urllib.parse.urlparse(config.XUI_URL).hostname
+    
+    stream_settings = ib.get("streamSettings", {})
+    if isinstance(stream_settings, str):
+        try: stream_settings = json.loads(stream_settings)
+        except Exception: stream_settings = {}
+        
+    security = stream_settings.get("security", "none")
+    network = stream_settings.get("network", "tcp")
+    
+    reality_settings = stream_settings.get("realitySettings", {})
+    if isinstance(reality_settings, str):
+        try: reality_settings = json.loads(reality_settings)
+        except Exception: reality_settings = {}
+        
+    public_key = reality_settings.get("publicKey", "")
+    fp = reality_settings.get("fingerprint", "chrome")
+    
+    short_ids = reality_settings.get("shortIds", [""])
+    sid = short_ids if isinstance(short_ids, list) and short_ids else ""
+    
+    server_names = reality_settings.get("serverNames", ["://google.com"])
+    sni = server_names if isinstance(server_names, list) and server_names else "://google.com"
+    
+    service_name = stream_settings.get("grpcSettings", {}).get("serviceName", "UpdateServiceApis")
+    
+    query_params = {"type": network, "security": security}
+    if network == "grpc": query_params["serviceName"] = service_name
+    if security == "reality":
+        query_params.update({"pbk": public_key, "fp": fp, "sid": sid, "sni": sni, "authority": ""})
+    if protocol == "vless" and network == "tcp" and security == "reality":
+        query_params["flow"] = "xtls-rprx-vision"
+        
+    query_string = urllib.parse.urlencode(query_params)
+    if protocol == "shadowsocks":
+        inbound_settings = ib.get("settings", {})
+        if isinstance(inbound_settings, str):
+            try: inbound_settings = json.loads(inbound_settings)
+            except Exception: inbound_settings = {}
+        return f"ss://{inbound_settings.get('method', 'aes-256-gcm')}:{{uuid}}@{server_host}:{port}#{urllib.parse.quote(remark)}-{{email}}"
+        
+    return f"{protocol}://{{uuid}}@{server_host}:{port}?{query_string}#{urllib.parse.quote(remark)}-{{email}}"
+
