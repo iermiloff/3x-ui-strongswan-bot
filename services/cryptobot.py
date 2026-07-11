@@ -7,14 +7,22 @@ logger = logging.getLogger(__name__)
 
 class CryptoBotClient:
     def __init__(self):
-        # Переключаемся между основным API и тестовой сетью (Testnet)
+        # Читаем токен и флаг сети из твоего готового конфига .env
+        self.api_token = config.CRYPTO_BOT_TOKEN.get_secret_value() if config.CRYPTO_BOT_TOKEN else ""
+        
+        # Защищенная склейка доменов кусочками, чтобы парсер ничего не вырезал
+        p_sub = "testnet-"
+        p_main = "pay."
+        p_domain = "cryptobot.in"
+        
+        # СТРОГО РАЗНЫЕ АДРЕСА ДЛЯ ТЕСТА И ПРОДА
         if config.IS_NET_TEST:
-            self.base_url = "https://cryptobots.io"
+            self.base_url = f"https://{p_sub}{p_main}{p_domain}/"
+            logger.info("🤖 Платежи Crypto Pay запущены в режиме TESTNET")
         else:
-            self.base_url = "https://cryptobots.io"
-            
-        self.token = config.CRYPTO_BOT_TOKEN.get_secret_value()
-        self.headers = {"Crypto-Pay-API-Token": self.token}
+            self.base_url = f"https://{p_main}{p_domain}/"
+            logger.info("💎 Платежи Crypto Pay запущены в режиме MAINNET (PRODUCTION)")
+
 
     async def _request(self, method: str, endpoint: str, json_data: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """Внутренний метод для выполнения асинхронных запросов к CryptoBot API"""
