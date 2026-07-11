@@ -10,10 +10,10 @@ class CryptoBotClient:
         # Читаем токен и флаг сети из твоего готового конфига .env
         self.api_token = config.CRYPTO_BOT_TOKEN.get_secret_value() if config.CRYPTO_BOT_TOKEN else ""
         
-        # Защищенная склейка доменов кусочками, чтобы парсер ничего не вырезал
+        # Склеиваем домены кусочками строго по картинке: crypt.bot
         p_sub = "testnet-"
         p_main = "pay."
-        p_domain = "cryptobot.in"
+        p_domain = "crypt.bot"
         
         # СТРОГО РАЗНЫЕ АДРЕСА ДЛЯ ТЕСТА И ПРОДА
         if config.IS_NET_TEST:
