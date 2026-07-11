@@ -60,43 +60,9 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
                 try: reality_settings = json.loads(reality_settings)
                 except Exception: reality_settings = {}
             
-            api_pbk = reality_settings.get("publicKey", "")
-            
-            # ТОЧЕЧНОЕ РЕШЕНИЕ: Если ключ пустой, запрашиваем полный список на лету
-            if not api_pbk:
-                from bot.services.xui import xui_client
-                # Вызываем асинхронный метод внутри синхронной функции генератора
-                try:
-                    import asyncio
-                    inbounds_list = asyncio.run_coroutine_threadsafe(
-                        xui_client.get_inbounds(), 
-                        asyncio.get_event_loop()
-                    ).result()
-                except Exception:
-                    # Фолбэк, если дефолтный луп занят (для aiogram 3)
-                    try:
-                        loop = asyncio.get_running_loop()
-                        inbounds_list = loop.run_until_complete(xui_client.get_inbounds())
-                    except Exception:
-                        inbounds_list = None
-                        
-                if inbounds_list:
-                    target_raw = next((ib for ib in inbounds_list if ib.get("id") == target_inbound.get("id")), None)
-                    if target_raw:
-                        raw_stream = target_raw.get("streamSettings", {})
-                        if isinstance(raw_stream, str):
-                            try: raw_stream = json.loads(raw_stream)
-                            except: raw_stream = {}
-                        raw_reality = raw_stream.get("realitySettings", {})
-                        if isinstance(raw_reality, str):
-                            try: raw_reality = json.loads(raw_reality)
-                            except: raw_reality = {}
-                        api_pbk = raw_reality.get("publicKey", "")
+            # Нативно берем publicKey. Если объект пришел из list — он тут будет!
+            query_params["pbk"] = reality_settings.get("publicKey", "")
 
-            query_params["pbk"] = api_pbk
-
-
-            
             # ЗАЩИТА: Извлекаем строго первый Short ID, если пришел список (как в 3.4.2)
             short_ids = reality_settings.get("shortIds", [])
             if isinstance(short_ids, list) and short_ids:
