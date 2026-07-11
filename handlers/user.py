@@ -85,26 +85,24 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
     # НОВАЯ МУЛЬТИ-ПРОТОКОЛЬНАЯ ВЫДАЧА 3X-UI
     if config.ENABLE_XUI:
         try:
-                # Находим в БД ВСЕ инбаунды, которые админ привязал к текущему тарифу
-                # Для триала жестко ищем SubscriptionType.BASE, для оплаты — plan_type
-                target_plan = SubscriptionType.BASE if "trial" in callback.data else plan_type
+            # Находим в БД ВСЕ инбаунды, которые админ привязал к текущему тарифу
+            # Для триала жестко ищем SubscriptionType.BASE, для оплаты - plan_type
+            target_plan = SubscriptionType.BASE if "trial" in callback.data else plan_type
             
-                res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == target_plan))
-                active_tariff_inbounds = res.scalars().all()
-
+            res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == target_plan))
+            active_tariff_inbounds = res.scalars().all()
+            
             for ib in active_tariff_inbounds:
-            # Убедитесь, что здесь ровно 8 пробелов от левого края:
-            email = f"user_{db_user.telegram_id}_{uuid.uuid4().hex[:4]}"
-            client_uuid = await xui_client.add_client(inbound_id=ib.inbound_id, email=email)
-        
-            if client_uuid:
-                # Здесь тоже ровно 12 пробелов от левого края:
-                inbounds_list = await xui_client.get_inbounds()
-                target_inbound = next((inb for inb in inbounds_list if inb.get("id") == ib.inbound_id), None)
-            
-                if target_inbound:
-                    config_link = generate_xui_link(target_inbound, client_uuid, email)
-
+                email = f"user_{db_user.telegram_id}_{uuid.uuid4().hex[:4]}"
+                client_uuid = await xui_client.add_client(inbound_id=ib.inbound_id, email=email)
+                
+                if client_uuid:
+                    # Вызываем особый запрос общего списка, где MHSanaei отдает publicKey
+                    inbounds_list = await xui_client.get_inbounds()
+                    target_inbound = next((inb for inb in inbounds_list if inb.get("id") == ib.inbound_id), None)
+                    
+                    if target_inbound:
+                        config_link = generate_xui_link(target_inbound, client_uuid, email)
                         
                         vpn_key = VPNKey(
                             subscription_id=sub.id,
@@ -119,7 +117,6 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
                         issued_keys_info.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
         except Exception as e:
             logger.error(f"Ошибка мульти-генерации XUI: {e}")
-
 
     # 4. Итог операции (Триал)
     if has_created_any:
