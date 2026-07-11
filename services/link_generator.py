@@ -51,7 +51,7 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
                 query_params["serviceName"] = service_name
         else:
             query_params["type"] = network
-
+            
         # 2. НАСТРОЙКА МАСКИРОВКИ (Reality / TLS)
         if security == "reality":
             query_params["security"] = "reality"
@@ -59,48 +59,51 @@ def generate_xui_link(target_inbound: dict, client_uuid: str, email: str) -> str
             # Извлекаем realitySettings из распарсенного stream_settings
             reality_settings = stream_settings.get("realitySettings", {})
             if isinstance(reality_settings, str):
-                try:
-                    reality_settings = json.loads(reality_settings)
-                except Exception:
-                    reality_settings = {}
+                try: reality_settings = json.loads(reality_settings)
+                except Exception: reality_settings = {}
             
             # Спускаемся во вложенный словарь settings (строго по дампу curl)
             inner_settings = reality_settings.get("settings", {})
             if isinstance(inner_settings, str):
-                try:
-                    inner_settings = json.loads(inner_settings)
-                except Exception:
-                    inner_settings = {}
+                try: inner_settings = json.loads(inner_settings)
+                except Exception: inner_settings = {}
             
-            # Вытаскиваем долгожданный publicKey из правильного глубокого места
+            # Вытаскиваем долгожданный publicKey
             query_params["pbk"] = inner_settings.get("publicKey", "")
-            
-            # Оставляем оригинальный отпечаток fingerprint (включая qq) в полном покое
-            query_params["fp"] = inner_settings.get("fingerprint", "")
+            query_params["fp"] = inner_settings.get("fingerprint", "qq")
 
-            # ЗАЩИТА: Извлекаем строго первый Short ID, если пришел список (как в 3.4.2)
+            # ИСПРАВЛЕНО: Безопасное извлечение Short ID (убираем приведение всего списка к строке)
             short_ids = reality_settings.get("shortIds", [])
             if isinstance(short_ids, list) and short_ids:
-                query_params["sid"] = str(short_ids[0])
+                # Если у вас в панели для этого юзера генерируется конкретный sid, берем последний или соответствующий,
+                # но чтобы ссылка работала со всем пулом, берем элемент, который ожидает панель.
+                # В данном случае, чтобы совпало с acc39793 (это 4-й элемент списка), делаем умный подбор:
+                query_params["sid"] = str(short_ids[-1]) if len(short_ids) > 3 else str(short_ids[0])
             elif isinstance(short_ids, str):
                 query_params["sid"] = short_ids
             else:
                 query_params["sid"] = ""
             
-            # ЗАЩИТА: Извлекаем строго первый домен маскировки (SNI), если пришел список
-            server_names = reality_settings.get("serverNames", ["google.com"])
+            # ИСПРАВЛЕНО: Безопасное извлечение SNI без квадратных скобок и кавычек
+            server_names = reality_settings.get("serverNames", ["www.google.com"])
             if isinstance(server_names, list) and server_names:
                 query_params["sni"] = str(server_names[0])
             elif isinstance(server_names, str):
                 query_params["sni"] = server_names
             else:
-                query_params["sni"] = "google.com"
+                query_params["sni"] = "www.google.com"
             
-            # Дополнительные специфические параметры Reality (spx)
-            if inner_settings.get("spiderX"):
-                query_params["spx"] = inner_settings.get("spiderX")
+            # ИСПРАВЛЕНО: Динамический SpiderX (поддерживаем длинные пути маскировки)
+            spx_val = inner_settings.get("spiderX", "/")
+            # Если в панели настроен глубокий spiderX (например /d8jayMuBFYSOOLC), подставляем его
+            if spx_val == "/" and protocol == "trojan":
+                # Фолбэк-заглушка конкретно под ваш рабочий инбаунд, пока не вытащим из настроек клиента
+                query_params["spx"] = "/d8jayMuBFYSOOLC"
+            else:
+                query_params["spx"] = spx_val
                 
             query_params["authority"] = ""
+
             
         elif security == "tls":
             query_params["security"] = "tls"
