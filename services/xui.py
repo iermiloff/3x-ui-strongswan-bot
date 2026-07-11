@@ -80,7 +80,7 @@ class XUIClient:
             return None
 
     async def add_client(self, inbound_id: int, email: str, limit_ip: int = 2) -> Optional[dict]:
-        """Добавление клиента. Возвращает словарь с UUID и индивидуальными настройками маскировки."""
+        """Добавление клиента с поддержкой полей ID и Password для всех протоколов"""
         path = "panel/api/clients/add"
         client_uuid = uuid.uuid4().hex
         
@@ -92,23 +92,21 @@ class XUIClient:
                 "tgId": 0,
                 "limitIp": limit_ip,
                 "enable": True,
-                "id": client_uuid
+                "id": client_uuid,       # Для VLESS
+                "password": client_uuid  # ИСПРАВЛЕНО: Для Trojan строго передаем 32-значный hex сюда!
             },
             "inboundIds": [inbound_id]
         }
         
         response = await self._request("POST", path, json=payload)
         if response and response.get("success") is True:
-            # Вытаскиваем то, что сгенерировала панель конкретно для этого юзера
-            obj_list = response.get("obj", [])
-            client_data = obj_list[0] if isinstance(obj_list, list) and obj_list else {}
-            
             return {
                 "uuid": client_uuid,
-                "sid": client_data.get("sid", ""),
-                "spx": client_data.get("spx", "")
+                "sid": "",
+                "spx": ""
             }
         return None
+
 
 
     async def delete_client(self, inbound_id: int, client_uuid: str) -> bool:
