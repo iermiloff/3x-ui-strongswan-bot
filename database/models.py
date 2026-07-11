@@ -56,7 +56,7 @@ class VPNKey(Base):
     protocol_name: Mapped[str] = mapped_column(String(50))
     
     # Идентификатор клиента внутри 3x-ui (обычно UUID или email) или логин в StrongSwan
-    client_uuid: Mapped[str] = mapped_column(String(255), unique=True)
+    client_uuid: Mapped[str] = mapped_column(String(255), unique=False)
     
     # ID инбаунда в 3x-ui (чтобы знать, к какому порту/протоколу привязан ключ в панели)
     inbound_id: Mapped[Optional[int]] = mapped_column(nullable=True)
