@@ -19,12 +19,15 @@ logger = logging.getLogger(__name__)
 user_router = Router()
 
 def get_main_menu_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🎁 Бесплатный тест (1 день)", callback_query_data="menu_trial"))
-    builder.row(InlineKeyboardButton(text="💎 Купить подписку", callback_query_data="menu_tariffs"))
-    builder.row(InlineKeyboardButton(text="👤 Мой профиль / Ключи", callback_query_data="menu_profile"))
-    builder.row(InlineKeyboardButton(text="📊 Статистика", callback_query_data="menu_stats"))
-    return builder.as_markup()
+    # Собираем матрицу кнопок напрямую, без билдеров, со строгими именованными аргументами
+    inline_keyboard = [
+        [InlineKeyboardButton(text="🎁 Бесплатный тест (1 день)", callback_query_data="menu_trial")],
+        [InlineKeyboardButton(text="💎 Купить подписку", callback_query_data="menu_tariffs")],
+        [InlineKeyboardButton(text="👤 Мой профиль / Ключи", callback_query_data="menu_profile")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_query_data="menu_stats")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+
 
 
 @user_router.message(CommandStart())
@@ -291,6 +294,8 @@ async def cb_menu_profile(callback: CallbackQuery, db_session: AsyncSession):
     
     profile_text = f"👤 <b>Личный кабинет пользователя</b>\n\n• Ваш Telegram ID: <code>{tg_id}</code>\n"
     keyboard = [[InlineKeyboardButton(text="🔙 В главное меню", callback_query_data="menu_main")]]
+    await callback.message.edit_text(text=profile_text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+
     
     if active_subs:
         profile_text += "\n🔑 <b>Ваши активные конфигурации подписок:</b>\n\n"
