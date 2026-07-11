@@ -17,6 +17,9 @@ class XUIClient:
         
         self.api_token = config.XUI_PASSWORD.get_secret_value() if config.XUI_PASSWORD else ""
         
+        # Переменная в ОЗУ для хранения публичного ключа Reality
+        self.reality_public_key = ""
+        
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept": "application/json",
@@ -33,7 +36,36 @@ class XUIClient:
         )
 
     async def login(self) -> bool:
-        return True
+        """
+        При первичном вызове (в main.py) запрашиваем список портов 
+        и разово кешируем publicKey из Reality-настроек панели в ОЗУ.
+        """
+        try:
+            inbounds = await self.get_inbounds()
+            if inbounds:
+                for ib in inbounds:
+                    # Ищем инбаунд, где включен reality
+                    stream_settings = ib.get("streamSettings", {})
+                    if isinstance(stream_settings, str):
+                        import json
+                        try: stream_settings = json.loads(stream_settings)
+                        except: stream_settings = {}
+                    
+                    if stream_settings.get("security") == "reality":
+                        reality_settings = stream_settings.get("realitySettings", {})
+                        if isinstance(reality_settings, str):
+                            try: reality_settings = json.loads(reality_settings)
+                            except: reality_settings = {}
+                        
+                        pk = reality_settings.get("publicKey", "")
+                        if pk:
+                            self.reality_public_key = pk
+                            logger.info(f"✅ Публичный ключ Reality успешно кеширован в ОЗУ: {pk[:10]}...")
+                            break
+            return True
+        except Exception as e:
+            logger.error(f"Не удалось закешировать publicKey при старте: {e}")
+            return True
 
     async def _request(self, method: str, path: str, **kwargs) -> Optional[Dict[str, Any]]:
         url = path.lstrip('/')
