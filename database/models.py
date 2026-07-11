@@ -78,4 +78,3 @@ class TariffInbound(Base):
     protocol_name: Mapped[str] = mapped_column(String(50))         # VLESS, TROJAN и т.д.
     port: Mapped[int] = mapped_column()
     remark: Mapped[str] = mapped_column(String(255))               # Название из панели
-    link_template = Column(Text, nullable=True)
