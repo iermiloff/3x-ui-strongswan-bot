@@ -497,7 +497,7 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
                 inbound_ids_pack = [ib.inbound_id for ib in active_tariff_inbounds]
                 
                 # Генерируем ОДИН уникальный email на весь оплаченный период
-                email = f"user_{db_user.telegram_id}_{uuid.uuid4().hex[:4]}"
+                email = f"user_{pay_user_id}_{uuid.uuid4().hex[:4]}"
                 
                 # Разово вызываем метод добавления клиента на ВСЕ инбаунды сразу!
                 client_info = await xui_client.add_client(inbound_ids=inbound_ids_pack, email=email)
@@ -596,8 +596,8 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
     )
     
     await callback.message.delete()
-    await callback.message.answer(text=success_message, reply_markup=get_main_menu_keyboard())
-    
+    await callback.message.answer(text=success_message, reply_markup=get_main_menu_keyboard(pay_user_id))
+
     xui_key = next((k for k in sub.keys if k.protocol_category == ProtocolType.XUI), None)
     if xui_key:
         try:
