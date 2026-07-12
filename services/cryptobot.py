@@ -71,33 +71,42 @@ class CryptoBotClient:
     async def get_invoice(self, invoice_id: int) -> Optional[Dict[str, Any]]:
         """
         Получение информации о конкретном инвойсе по его ID.
-        Строго соответствует страницам 6 и 7 официальной документации Crypto Pay API.
+        Пуленепробиваемый разбор любого ответа (напрямую массив или вложенный items).
         """
         url = f"{self.base_url}getInvoices"
-        # Передаем параметр invoice_ids (как строку через запятую) строго по спецификации API
         params = {"invoice_ids": str(invoice_id)}
         
         try:
             async with httpx.AsyncClient(verify=False) as client:
                 response = await client.get(url, params=params, headers=self.headers, timeout=10.0)
                 if response.status_code != 200:
-                    logger.error(f"CryptoBot API ошибка getInvoices: {response.status_code}")
+                    logger.error(f"CryptoBot API ошибка getInvoices: {response.status_code} - {response.text}")
                     return None
                 
                 resp_json = response.json()
                 if resp_json.get("ok") is True:
-                    # Документация: метод возвращает напрямую массив (array of Invoice) внутри поля result
-                    invoices_list = resp_json.get("result", [])
-                    if isinstance(invoices_list, list) and invoices_list:
-                        # Возвращаем СТРОГО первый элемент списка (конкретный Invoice-словарь)
-                        return invoices_list[0]
-                else:
-                    logger.error(f"CryptoBot вернул ok=False в getInvoices: {resp_json}")
-                    return None
+                    result_data = resp_json.get("result", [])
+                    
+                    # Фолбэк-защита: если API вернул словарь с ключом items (как в некоторых версиях доки)
+                    if isinstance(result_data, dict) and "items" in result_data:
+                        invoices_list = result_data.get("items", [])
+                    elif isinstance(result_data, list):
+                        invoices_list = result_data
+                    else:
+                        invoices_list = []
+                        
+                    if invoices_list and len(invoices_list) > 0:
+                        # Возвращаем строго конкретный словарь инвойса для вашего user.py
+                        target_invoice = invoices_list[0]
+                        logger.info(f"✅ Статус инвойса {invoice_id} успешно получен: {target_invoice.get('status')}")
+                        return target_invoice
+                        
+                logger.error(f"CryptoBot не нашел инвойс {invoice_id} в ответе: {resp_json}")
                 return None
         except Exception as e:
             logger.error(f"Исключение при запросе к CryptoBot (get_invoice): {e}")
             return None
+
 
 cryptobot_client = CryptoBotClient()
 
