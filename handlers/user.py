@@ -439,7 +439,7 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
         await callback.answer("⏳ Платеж уже обрабатывается, пожалуйста, подождите...", show_alert=True)
         return
 
-    invoice_id = int(callback.data.split("_"))
+    invoice_id = int(callback.data.split("_")[-1])
     
     # Запрашиваем информацию у CryptoBot API
     invoices = await cryptobot_client.get_invoice(invoice_id)
