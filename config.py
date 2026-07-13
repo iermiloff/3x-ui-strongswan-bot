@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     SSH_HOST: Optional[str] = None
     SSH_PORT: Optional[int] = 22
     SSH_USER: Optional[str] = None
+    SSH_PASSWORD: Optional[str] = None  # ДОБАВЛЕНО: поддержка обычных паролей root
     SSH_KEY_PATH: Optional[str] = None
 
     # CryptoBot
