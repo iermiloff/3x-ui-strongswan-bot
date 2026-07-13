@@ -339,7 +339,7 @@ def get_tariffs_keyboard() -> InlineKeyboardMarkup:
         # --- СИСТЕМНАЯ НАВИГАЦИЯ ---
         [
             # ИСПРАВЛЕНО: Кнопка ведет в главное меню (триггер возврата на стартовый экран ЛК)
-            InlineKeyboardButton(text="⬅️ В главное меню", callback_data="menu_main")
+            InlineKeyboardButton(text="⬅️ В главное меню", callback_data="back_to_main")
         ]
     ])
     return keyboard
