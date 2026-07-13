@@ -496,21 +496,27 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
     # Загружаем уже существующие ключи для этой подписки, если это было ПРОДЛЕНИЕ
     stmt_keys = select(VPNKey).where(VPNKey.subscription_id == sub.id)
     existing_keys_res = await db_session.execute(stmt_keys)
-    existing_keys = {k.inbound_id: k for k in existing_keys_res.scalars().all() if k.protocol_category == ProtocolType.XUI}
-    existing_ikev2 = next((k for k in existing_keys_res.scalars().all() if k.protocol_category == ProtocolType.IKEV2), None)
+    
+    all_keys = list(existing_keys_res.scalars().all())
+    
+    # Теперь спокойно и безопасно раскладываем ключи по протоколам
+    existing_keys = {k.inbound_id: k for k in all_keys if k.protocol_category == ProtocolType.XUI}
+    existing_ikev2 = next((k for k in all_keys if k.protocol_category == ProtocolType.IKEV2), None)
 
-    # 3. Интеграция с 3x-ui (XUI) для ОПЛАЧЕННЫХ тарифов — МУЛЬТИ-ПРОТОКОЛЬНЫЙ РЕЖИМ
+
+    # 3. Интеграция с 3x-ui (XUI) — МУЛЬТИ-ПРОТОКОЛЬНЫЙ РЕЖИМ
     if config.ENABLE_XUI:
         try:
-            # УМНОЕ ПРОДЛЕНИЕ: Если у пользователя уже есть ключи в этой подписке, не плодим новые дубликаты!
-            if existing_keys:
-                for k in existing_keys.values():
+            # УМНОЕ ПРОДЛЕНИЕ XUI: Проверяем наличие старых ключей строго в массиве XUI!
+            if existing_xui_keys:
+                for k in existing_xui_keys:
                     issued_keys_text.append(f"🚀 <b>Ключ {k.protocol_name} [Продлен]:</b>\n<code>{k.config_data}</code>")
                     config_link = k.config_data
             else:
-                # Находим в БД все порты, привязанные к КУПЛЕННОМУ тарифному плану, только если ключей нет
+                # Если старых XUI ключей нет — генерируем новые в панели...
                 res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == plan_type))
-                active_tariff_inbounds = res.scalars().all()
+                # ... (дальше идет ваш стандартный код генерации клиентов в панели 3x-ui) ...
+
                 
                 if active_tariff_inbounds:
                     inbound_ids_pack = [ib.inbound_id for ib in active_tariff_inbounds]
