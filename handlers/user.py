@@ -35,7 +35,7 @@ async def send_welcome_or_sub(bot: Bot, chat_id: int, db_user: User):
     username_str = f", {db_user.username}" if db_user.username else ""
     welcome_text = (
         f"👋 Приветствуем{username_str} в <b>{config.BRAND_NAME}</b>!\n\n"
-        f"🚀 У нас доступны сверхбыстрые протоколы для обхода блокировок (XUI) "
+        f"🚀 У нас доступны сверхбыстрые протоколы для обхода блокировок (XRAY) "
         f"и стабильный нативный IKEv2 (StrongSwan) для iOS/macOS/роутеров без сторонних приложений.\n\n"
         f"⚙️ Выберите интересующий раздел в меню ниже:"
     )
@@ -323,7 +323,7 @@ def get_tariffs_keyboard() -> InlineKeyboardMarkup:
         
         # --- СЕКЦИЯ ТАРИФА PREMIUM ---
         [
-            InlineKeyboardButton(text="💎 PREMIUM (XUI + Нативный IKEv2)", callback_data="none")
+            InlineKeyboardButton(text="💎 PREMIUM (XRAY + Нативный IKEv2)", callback_data="none")
         ],
         [
             InlineKeyboardButton(
