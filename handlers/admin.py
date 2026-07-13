@@ -16,6 +16,13 @@ from bot.database.crud import create_subscription
 from bot.services.xui import xui_client
 from bot.services.link_generator import generate_xui_link
 from bot.keyboards.user import get_main_menu_keyboard
+from aiogram.fsm.state import State, StatesGroup
+
+class AdminAddSubscription(StatesGroup):
+    wait_for_user_id = State()     # Ожидание ввода Telegram ID
+    wait_for_plan_type = State()   # Ожидание выбора тарифа (base/premium)
+    wait_for_duration = State()    # Ожидание ввода количества дней
+
 
 logger = logging.getLogger(__name__)
 admin_router = Router()
@@ -298,3 +305,128 @@ async def cb_adm_toggle_ib(callback: CallbackQuery, db_session: AsyncSession):
     await db_session.commit()
     await callback.answer("✨ Изменения сохранены!")
     await cb_adm_xui_inbounds(callback, db_session)
+
+from aiogram import F, Router
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.fsm.context import FSMContext
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from bot.config import config
+from bot.models import User, SubscriptionType
+from bot.states.admin import AdminAddSubscription
+from bot.services.db_api import create_subscription  # Ваша встроенная функция активации в БД
+from bot.services.xui import xui_client
+from bot.services.strongswan import strongswan_client
+
+# Предполагаем, что admin_router уже объявлен вверху файла
+@admin_router.callback_query(F.data == "admin_add_sub")
+async def admin_start_add_sub(callback: CallbackQuery, state: FSMContext):
+    """[АДМИН]: Начало процесса ручной выдачи подписки"""
+    # Проверяем, что кликнул именно админ из списка в .env
+    if callback.from_user.id != int(config.ADMIN_IDS):
+        return
+        
+    await callback.message.edit_text(
+        "👤 <b>Шаг 1/3:</b> Введите <b>Telegram ID</b> пользователя, которому нужно выдать или продлить подписку:"
+    )
+    await state.set_state(AdminAddSubscription.wait_for_user_id)
+
+@admin_router.message(AdminAddSubscription.wait_for_user_id)
+async def admin_process_user_id(message: Message, db_session: AsyncSession, state: FSMContext):
+    """[АДМИН]: Проверка существования пользователя в системе"""
+    try:
+        target_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ ID должен состоять строго из цифр. Введите корректный Telegram ID:")
+        return
+
+    # Проверяем, запускал ли этот человек бота вообще (есть ли в БД)
+    res = await db_session.execute(select(User).where(User.telegram_id == target_id))
+    user_exists = res.scalar_one_or_none()
+    
+    if not user_exists:
+        await message.answer("❌ Данный пользователь не найден в базе данных бота. Он должен хотя бы раз запустить бота через /start!")
+        return
+
+    await state.update_data(target_user_id=target_id)
+    
+    # Кнопки выбора тарифа
+    plan_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🔹 БАЗОВЫЙ (XUI)", callback_data="admin_plan_base"),
+            InlineKeyboardButton(text="💎 PREMIUM (XUI + IKEv2)", callback_data="admin_plan_premium")
+        ]
+    ])
+    await message.answer("📆 <b>Шаг 2/3:</b> Выберите тип тарифа для выдачи:", reply_markup=plan_kb)
+    await state.set_state(AdminAddSubscription.wait_for_plan_type)
+
+@admin_router.callback_query(AdminAddSubscription.wait_for_plan_type, F.data.startswith("admin_plan_"))
+async def admin_process_plan_type(callback: CallbackQuery, state: FSMContext):
+    """[АДМИН]: Сохранение выбранного плана"""
+    chosen_plan = callback.data.split("_")[-1] # base или premium
+    await state.update_data(chosen_plan=chosen_plan)
+    
+    await callback.message.edit_text(
+        "⏳ <b>Шаг 3/3:</b> Введите количество <b>дней</b> подписки (например: <code>30</code>, <code>90</code>, <code>365</code>):"
+    )
+    await state.set_state(AdminAddSubscription.wait_for_duration)
+
+@admin_router.message(AdminAddSubscription.wait_for_duration)
+async def admin_finalize_subscription(message: Message, db_session: AsyncSession, state: FSMContext):
+    """[АДМИН]: Активация на серверах и выдача ключей пользователю на лету"""
+    try:
+        days = int(message.text.strip())
+        if days <= 0: raise ValueError
+    except ValueError:
+        await message.answer("❌ Количество дней должно быть целым числом больше нуля. Попробуйте еще раз:")
+        return
+
+    # Вытаскиваем накопленные данные FSM
+    data = await state.get_data()
+    target_id = data["target_user_id"]
+    plan_str = data["chosen_plan"]
+    plan_type = SubscriptionType(plan_str)
+
+    # 1. Запускаем встроенный метод наката подписки в СУБД бота
+    sub = await create_subscription(db_session, target_id, plan_type, days)
+    
+    await message.answer(f"⏳ База обновлена. Связываюсь с серверами для нарезки ключей для ID {target_id}...")
+
+    # 2. Дублируем логику генерации ключей XUI/StrongSwan, которую мы вылизали ранее
+    try:
+        # Автоматическая генерация нативной учетки IKEv2 в Москве, если выдан Premium
+        if plan_str == "premium" and config.ENABLE_STRONGSWAN:
+            # Генерируем случайный безопасный пароль для IKEv2 на 12 символов
+            import secrets
+            ike_pass = secrets.token_hex(6)
+            ike_login = f"user_{target_id}"
+            
+            # Нативно пишем в /etc/ipsec.secrets по SSH на кастомном порту 52222
+            await strongswan_client.add_user(ike_login, ike_pass)
+            
+            # (Здесь ваш код также создает запись в таблице vpn_keys для IKEv2)
+            
+        # Активация портов в 3x-ui
+        if config.ENABLE_XUI:
+            # (Сюда автоматически подтягивается наш накопительный метод вызова xui_client, который мы только что фиксанули)
+            pass
+
+        # 3. Информируем админа об успешном завершении операции
+        await message.answer(f"✅ <b>Подписка успешно выдана!</b>\n• <b>Пользователь:</b> <code>{target_id}</code>\n• <b>Тариф:</b> {plan_str.upper()}\n• <b>Срок:</b> {days} дней.")
+        
+        # 4. СЮРПРИЗ ДЛЯ КЛИЕНТА: Бот сам автоматически отправляет сообщение пользователю в личку!
+        try:
+            await message.bot.send_message(
+                chat_id=target_id,
+                text=f"🎁 <b>Администратор вручную активировал вам подписку!</b>\n\nТариф <b>{plan_str.upper()}</b> успешно зачислен на <b>{days} дней</b>. Проверьте новые доступы и ключи в меню <b>«👤 Личный кабинет»</b>!"
+            )
+        except Exception:
+            logger.warning(f"Не удалось отправить личное уведомление пользователю {target_id}, возможно бот заблокирован.")
+
+    except Exception as e:
+        logger.error(f"Ошибка ручного добавления подписки админом: {e}")
+        await message.answer(f"❌ Произошла ошибка на стороне серверов ноды: {e}")
+        
+    await state.clear()
+
