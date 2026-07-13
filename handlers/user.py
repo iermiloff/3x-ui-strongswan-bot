@@ -278,21 +278,64 @@ async def cb_show_concrete_instruction(callback: CallbackQuery):
     
     # Для удобства юзера возвращаем его на экран выбора платформ этого же протокола
     await callback.message.edit_text(text=text, reply_markup=get_platform_keyboard(protocol))
+    
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from bot.config import config
 
 def get_tariffs_keyboard() -> InlineKeyboardMarkup:
-    """Выбор типа подписки"""
+    """Динамическое меню выбора тарифов с выводом цен из .env файла"""
+    currency = config.PAYMENT_CURRENCY
+    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        # --- СЕКЦИЯ ТАРИФА БАЗОВЫЙ ---
         [
-            InlineKeyboardButton(text="🚀 БАЗОВЫЙ (Только 3x-ui / Xray)", callback_data="buy_plan_base")
+            InlineKeyboardButton(text="🔹 БАЗОВЫЙ (VLESS + Trojan)", callback_data="none")
         ],
         [
-            InlineKeyboardButton(text="💎 PREMIUM (3x-ui + IKEv2 для iOS/Mac)", callback_data="buy_plan_premium")
+            InlineKeyboardButton(
+                text=f"📆 1 мес. — {config.PRICE_BASE_1_MONTH} {currency}", 
+                callback_data="buy_base_30"
+            ),
+            InlineKeyboardButton(
+                text=f"📆 3 мес. — {config.PRICE_BASE_3_MONTHS} {currency}", 
+                callback_data="buy_base_90"
+            )
         ],
         [
-            InlineKeyboardButton(text="⬅️ В главное меню", callback_data="back_to_main")
+            InlineKeyboardButton(
+                text=f"📆 6 мес. — {config.PRICE_BASE_6_MONTHS} {currency}", 
+                callback_data="buy_base_180"
+            )
+        ],
+        
+        # --- СЕКЦИЯ ТАРИФА PREMIUM ---
+        [
+            InlineKeyboardButton(text="💎 PREMIUM (XUI + Нативный IKEv2)", callback_data="none")
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"📆 1 мес. — {config.PRICE_PREMIUM_1_MONTH} {currency}", 
+                callback_data="buy_premium_30"
+            ),
+            InlineKeyboardButton(
+                text=f"📆 3 мес. — {config.PRICE_PREMIUM_3_MONTHS} {currency}", 
+                callback_data="buy_premium_90"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"📆 6 мес. — {config.PRICE_PREMIUM_6_MONTHS} {currency}", 
+                callback_data="buy_premium_180"
+            )
+        ],
+        
+        # --- СИСТЕМНЫЕ КНОПКИ ---
+        [
+            InlineKeyboardButton(text="⬅️ В главное меню", callback_data="menu_main")
         ]
     ])
     return keyboard
+
 
 def get_periods_keyboard(plan_type: str) -> InlineKeyboardMarkup:
     """Выбор длительности подписки"""
