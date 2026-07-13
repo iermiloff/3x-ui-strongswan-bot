@@ -3,8 +3,16 @@ from bot.config import config
 
 def get_main_menu_keyboard(user_tg_id: int) -> InlineKeyboardMarkup:
     """Генерирует инлайн-клавиатуру главного меню: разделяет интерфейс админа и пользователя"""
+    # Безопасно преобразуем ADMIN_IDS в список целых чисел, независимо от того, что прилетело из .env
+    if isinstance(config.ADMIN_IDS, list):
+        admin_list = [int(x) for x in config.ADMIN_IDS]
+    elif isinstance(config.ADMIN_IDS, str) and "," in config.ADMIN_IDS:
+        admin_list = [int(x.strip()) for x in config.ADMIN_IDS.split(",")]
+    else:
+        admin_list = [int(config.ADMIN_IDS)]
+
     # 1. ЕСЛИ НАЖАЛ АДМИНИСТРАТОР (Выдаем строго рабочие админ-кнопки по вашему admin.py)
-    if user_tg_id in config.ADMIN_IDS:
+    if user_tg_id in admin_list:
         return InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="👥 Список и управление клиентами", callback_data="admin_list_users")
