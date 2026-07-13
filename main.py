@@ -30,9 +30,17 @@ async def on_startup(bot: Bot):
         else:
             logger.warning("Не удалось связаться с 3x-ui! Проверьте панель и настройки .env")
             
+    # ПРОВЕРКА СВЯЗИ СО STRONGSWAN ПО SSH:
+    if getattr(config, "ENABLE_STRONGSWAN", True):
+        from bot.services.strongswan import strongswan_client
+        ssh_ok = await strongswan_client.check_connection()
+        if not ssh_ok:
+            logger.warning("⚠️ Внимание! Удаленное управление StrongSwan по SSH недоступно. Проверьте пароль root или настройки UFW на ноде!")
+            
     # Запускаем планировщик фоновых задач
     scheduler.start()
     logger.info("Планировщик фоновых задач успешно запущен (Проверка в 03:00 UTC).")
+
 
 async def on_shutdown(bot: Bot):
     logger.info("Бот останавливается...")
