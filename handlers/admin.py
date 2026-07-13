@@ -321,7 +321,7 @@ class AdminAddSubscription(StatesGroup):
     wait_for_plan_type = State()   # Ожидание выбора тарифа (base/premium)
     wait_for_duration = State()    # Ожидание ввода количества дней
 
-from bot.services.subscription import create_subscription
+from bot.handlers.user import create_subscription
 from bot.services.xui import xui_client
 from bot.services.strongswan import strongswan_client
 
