@@ -81,8 +81,8 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
     issued_keys_info = []
     has_created_any = False
 
-    # 2. Создаем подписку в БД на 1 день (тип BASE)
-    sub = await create_subscription(db_session, db_user.telegram_id, SubscriptionType.BASE, duration_days=1)
+    # 2. Создаем подписку в БД на 1 день (тип PREMIUM)
+    sub = await create_subscription(db_session, db_user.telegram_id, SubscriptionType.PREMIUM, duration_days=1)
 
     # 3. Интеграция с 3x-ui (XUI) — МУЛЬТИ-ПРОТОКОЛЬНЫЙ РЕЖИМ (Один UUID на все порты)
     if config.ENABLE_XUI:
