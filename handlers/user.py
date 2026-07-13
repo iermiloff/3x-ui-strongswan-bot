@@ -297,17 +297,17 @@ def get_tariffs_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
-                text=f"I 1 мес. — {config.PRICE_BASE_1_MONTH} {currency}", 
+                text=f"📆 1 мес. — {config.PRICE_BASE_1_MONTH} {currency}", 
                 callback_data=f"pay_base_30_{currency}"
             ),
             InlineKeyboardButton(
-                text=f"I 3 мес. — {config.PRICE_BASE_3_MONTHS} {currency}", 
+                text=f"📆 3 мес. — {config.PRICE_BASE_3_MONTHS} {currency}", 
                 callback_data=f"pay_base_90_{currency}"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"I 6 мес. — {config.PRICE_BASE_6_MONTHS} {currency}", 
+                text=f"📆 6 мес. — {config.PRICE_BASE_6_MONTHS} {currency}", 
                 callback_data=f"pay_base_180_{currency}"
             )
         ],
@@ -318,17 +318,17 @@ def get_tariffs_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
-                text=f"I 1 мес. — {config.PRICE_PREMIUM_1_MONTH} {currency}", 
+                text=f"📆 1 мес. — {config.PRICE_PREMIUM_1_MONTH} {currency}", 
                 callback_data=f"pay_premium_30_{currency}"
             ),
             InlineKeyboardButton(
-                text=f"I 3 мес. — {config.PRICE_PREMIUM_3_MONTHS} {currency}", 
+                text=f"📆 3 мес. — {config.PRICE_PREMIUM_3_MONTHS} {currency}", 
                 callback_data=f"pay_premium_90_{currency}"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"I 6 мес. — {config.PRICE_PREMIUM_6_MONTHS} {currency}", 
+                text=f"📆 6 мес. — {config.PRICE_PREMIUM_6_MONTHS} {currency}", 
                 callback_data=f"pay_premium_180_{currency}"
             )
         ],
