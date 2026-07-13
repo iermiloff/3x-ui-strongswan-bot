@@ -515,12 +515,19 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
                     config_link = k.config_data
             else:
                 # Если старых XUI ключей нет — генерируем новые в панели
-                res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == plan_type))
-                # ОБЪЯВЛЯЕМ И ВЫЧИТЫВАЕМ СПИСОК (Снова scalars, но один раз и по делу):
+                # УМНЫЙ НАКОПИТЕЛЬНЫЙ ТАРИФ: Premium включает в себя всё из Base + свои порты
+                plans_to_fetch = ["base"]
+                if plan_type == "premium":
+                    plans_to_fetch.append("premium")
+                
+                # Делаем выборку инбаундов сразу для всех подходящих планов
+                res = await db_session.execute(
+                    select(TariffInbound).where(TariffInbound.plan_type.in_(plans_to_fetch))
+                )
                 active_tariff_inbounds = list(res.scalars().all())
                 
                 if not active_tariff_inbounds:
-                    logger.error(f"❌ Критическая ошибка: В БД не привязаны инбаунды 3x-ui для тарифа {plan_type}")
+                    logger.error(f"❌ Критическая ошибка: В БД не привязаны инбаунды 3x-ui для планов {plans_to_fetch}")
 
                 
                 if active_tariff_inbounds:
