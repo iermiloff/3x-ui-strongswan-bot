@@ -25,6 +25,7 @@ async def send_welcome_or_sub(bot: Bot, chat_id: int, db_user: User):
     if not is_subscribed:
         sub_keyboard = await get_subscription_keyboard(bot)
         if sub_keyboard:
+
             await bot.send_message(
                 chat_id=chat_id,
                 text="⚠️ <b>Доступ заблокирован!</b>\n\nДля использования VPN-бота необходимо быть подписанным на наш официальный канал. Подпишитесь и нажмите кнопку проверки ниже:",
@@ -126,7 +127,7 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
                             has_created_any = True
                             issued_keys_info.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
         except Exception as e:
-            logger.error(f"Ошибка мульти-протокольной генерации XUI: {e}")
+            logger.error(f"Ошибка мульти-протокольной генерации XRAY: {e}")
 
 
     # 4. Итог операции (Триал)
@@ -210,7 +211,7 @@ async def cb_menu_profile(callback: CallbackQuery, db_user: User, db_session: As
         
         for sub in active_subs:
             # Отображаем тип тарифа и срок действия
-            tariff_name = "💎 PREMIUM (IKEv2 + XUI)" if sub.plan_type == SubscriptionType.PREMIUM else "🚀 БАЗОВЫЙ (Только XUI)"
+            tariff_name = "💎 PREMIUM (IKEv2 + XRAY)" if sub.plan_type == SubscriptionType.PREMIUM else "🚀 БАЗОВЫЙ (Только XRAY)"
             expires_str = sub.expires_at.strftime("%d.%m.%Y %H:%M")
             profile_text += f"\nТариф: <b>{tariff_name}</b> (До: <code>{expires_str}</code>)\n"
             
