@@ -296,57 +296,50 @@ from bot.config import config
 logger = logging.getLogger(__name__)
 
 def get_tariffs_keyboard() -> InlineKeyboardMarkup:
-    """Динамическое меню выбора тарифов с выводом цен из .env файла"""
-    # Вытаскиваем валюту из .env, если её нет — ставим дефолтный USDT
+    """Оптимизированное меню выбора тарифов без псевдокнопок с динамическими ценами"""
     currency = getattr(config, "PAYMENT_CURRENCY", "USDT")
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        # --- СЕКЦИЯ ТАРИФА БАЗОВЫЙ ---
-        [
-            InlineKeyboardButton(text="🔹 БАЗОВЫЙ (VLESS + Trojan)", callback_data="none")
-        ],
+        # --- СЕКЦИЯ ТАРИФА БАЗОВЫЙ (XRAY) ---
         [
             InlineKeyboardButton(
-                text=f"📆 1 мес. — {config.PRICE_BASE_1_MONTH} {currency}", 
+                text=f"🚀 1 мес. — {config.PRICE_BASE_1_MONTH} {currency}", 
                 callback_data=f"pay_base_30_{currency}"
             ),
             InlineKeyboardButton(
-                text=f"📆 3 мес. — {config.PRICE_BASE_3_MONTHS} {currency}", 
+                text=f"🚀 3 мес. — {config.PRICE_BASE_3_MONTHS} {currency}", 
                 callback_data=f"pay_base_90_{currency}"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"📆 6 мес. — {config.PRICE_BASE_6_MONTHS} {currency}", 
+                text=f"🚀 6 мес. — {config.PRICE_BASE_6_MONTHS} {currency}", 
                 callback_data=f"pay_base_180_{currency}"
             )
         ],
         
-        # --- СЕКЦИЯ ТАРИФА PREMIUM ---
-        [
-            InlineKeyboardButton(text="💎 PREMIUM (XRAY + Нативный IKEv2)", callback_data="none")
-        ],
+        # --- СЕКЦИЯ ТАРИФА PREMIUM (XRAY + IKEv2) ---
         [
             InlineKeyboardButton(
-                text=f"📆 1 мес. — {config.PRICE_PREMIUM_1_MONTH} {currency}", 
+                text=f"💎 1 мес. — {config.PRICE_PREMIUM_1_MONTH} {currency}", 
                 callback_data=f"pay_premium_30_{currency}"
             ),
             InlineKeyboardButton(
-                text=f"📆 3 мес. — {config.PRICE_PREMIUM_3_MONTHS} {currency}", 
+                text=f"💎 3 мес. — {config.PRICE_PREMIUM_3_MONTHS} {currency}", 
                 callback_data=f"pay_premium_90_{currency}"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"📆 6 мес. — {config.PRICE_PREMIUM_6_MONTHS} {currency}", 
+                text=f"💎 6 мес. — {config.PRICE_PREMIUM_6_MONTHS} {currency}", 
                 callback_data=f"pay_premium_180_{currency}"
             )
         ],
         
-        # --- СИСТЕМНЫЕ КНОПКИ ---
+        # --- СИСТЕМНАЯ НАВИГАЦИЯ ---
         [
-            # Возврат в главное меню покупки тарифов
-            InlineKeyboardButton(text="⬅️ В главное меню", callback_data="menu_buy")
+            # ИСПРАВЛЕНО: Кнопка ведет в главное меню (триггер возврата на стартовый экран ЛК)
+            InlineKeyboardButton(text="⬅️ В главное меню", callback_data="menu_main")
         ]
     ])
     return keyboard
