@@ -526,7 +526,7 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
             logger.error(f"Ошибка мульти-протокольной генерации КУПЛЕННЫХ ключей XUI: {e}")
 
 
-    # 2. БЕЗОПАСНАЯ ГЕНЕРАЦИЯ ДЛЯ STRONGSWAN (IKEv2)
+    # 4. БЕЗОПАСНАЯ ГЕНЕРАЦИЯ ДЛЯ STRONGSWAN (IKEv2)
     if plan_type == SubscriptionType.PREMIUM and config.ENABLE_STRONGSWAN:
         try:
             login = f"user_{pay_user_id}"
@@ -557,13 +557,14 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
                 except asyncio.TimeoutError:
                     logger.error("Таймаут создания аккаунта StrongSwan по SSH")
                     success = False
-
+                    
                 if success:
                     vpn_key = VPNKey(
                         subscription_id=sub.id,
                         protocol_category=ProtocolType.IKEV2,
                         protocol_name="IKEv2",
                         client_uuid=login,
+                        inbound_id=0,  # Для нативного VPN ставим порт 0 или NULL
                         config_data=f"{login}:{password}"
                     )
                     db_session.add(vpn_key)
@@ -575,6 +576,7 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
                     )
         except Exception as e:
             logger.error(f"Ошибка генерации StrongSwan при оплате: {e}")
+
 
     # Фиксируем изменения в базе данных
     await db_session.commit()
