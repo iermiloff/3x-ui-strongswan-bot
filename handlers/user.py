@@ -514,9 +514,13 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
                     issued_keys_text.append(f"🚀 <b>Ключ {k.protocol_name} [Продлен]:</b>\n<code>{k.config_data}</code>")
                     config_link = k.config_data
             else:
-                # Если старых XUI ключей нет — генерируем новые в панели...
+                # Если старых XUI ключей нет — генерируем новые в панели
                 res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == plan_type))
-                # ... (дальше идет ваш стандартный код генерации клиентов в панели 3x-ui) ...
+                # ОБЪЯВЛЯЕМ И ВЫЧИТЫВАЕМ СПИСОК (Снова scalars, но один раз и по делу):
+                active_tariff_inbounds = list(res.scalars().all())
+                
+                if not active_tariff_inbounds:
+                    logger.error(f"❌ Критическая ошибка: В БД не привязаны инбаунды 3x-ui для тарифа {plan_type}")
 
                 
                 if active_tariff_inbounds:
