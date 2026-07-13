@@ -34,7 +34,7 @@ async def send_welcome_or_sub(bot: Bot, chat_id: int, db_user: User):
     
     username_str = f", {db_user.username}" if db_user.username else ""
     welcome_text = (
-        f"👋 Приветствуем{username_str} в нашем VPN-сервисе!\n\n"
+        f"👋 Приветствуем{username_str} в <b>{config.BRAND_NAME}</b>!\n\n"
         f"🚀 У нас доступны сверхбыстрые протоколы для обхода блокировок (XUI) "
         f"и стабильный нативный IKEv2 (StrongSwan) для iOS/macOS/роутеров без сторонних приложений.\n\n"
         f"⚙️ Выберите интересующий раздел в меню ниже:"
