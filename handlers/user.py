@@ -575,10 +575,12 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
                 
                 # УМНЫЙ ПЕРЕХВАТ СУЩЕСТВУЮЩИХ XUI КЛЮЧЕЙ ПРИ ПОВЫШЕНИИ ТАРИФА:
                 for tib in active_tariff_inbounds:
-                    # Если у пользователя уже есть ключ для этого инбаунда (от тарифа BASE) — мы его переиспользуем!
-                    if tib.inbound_id in existing_xui_keys:
-                        k = existing_xui_keys[tib.inbound_id]
-                        issued_keys_text.append(f"🚀 <b>Ключ {k.protocol_name} [Продлен]:</b>\n<code>{k.config_data}</code>")
+                    # Ищем, есть ли уже у юзера в базе ключ для этого конкретного порта (инбаунда)
+                    old_key = next((k for k in all_keys if k.inbound_id == tib.inbound_id and k.protocol_category == ProtocolType.XUI), None)
+                    
+                    if old_key:
+                        # Если ключ найден — просто закидываем его в текст выдачи, не создавая новый в 3x-ui!
+                        issued_keys_text.append(f"🚀 <b>Ключ {old_key.protocol_name} [Продлен]:</b>\n<code>{old_key.config_data}</code>")
                         continue
                         
                 
