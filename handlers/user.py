@@ -583,32 +583,32 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
 
     # Фиксируем изменения в базе данных
     await db_session.commit()
-
+    
     # 5. СНИМАЕМ БЛОКИРОВКУ И ВЫВОДИМ РЕЗУЛЬТАТ (Оплата)
     await state.clear()
-
     expires_str = sub.expires_at.strftime("%d.%m.%Y %H:%M")
     success_message = (
         f"✅ <b>Подписка успешно активирована!</b>\n"
         f"• Тариф: <b>{plan_type.upper()}</b>\n"
         f"• Срок действия: до <code>{expires_str}</code>\n\n"
-        f"🛒 <b>Ваши доступы к конфигурациям:</b>\n\n" + "\n\n".join(issued_keys_text) +
-        f"\n\n📚 Инструкции по настройке доступны в разделе <b>👤 Мой профиль / Ключи</b>."
+        f" <b>Ваши доступы к конфигурациям:</b>\n\n" + "\n\n".join(issued_keys_text) +
+        f"\n\nИнструкции по настройке доступны в разделе <b> Мой профиль / Ключи</b>."
     )
     
     await callback.message.delete()
     await callback.message.answer(text=success_message, reply_markup=get_main_menu_keyboard(pay_user_id))
-
-# Безопасно отправляем QR-код, используя config_link, который мы только что сгенерировали в цикле
+    
+    # БЕЗОПАСНАЯ ОТПРАВКА QR-КОДА: Берём сгенерированный в цикле config_link напрямую
     if config.ENABLE_XUI and 'config_link' in locals() and config_link:
         try:
             qr_file = create_qr_code_file(config_link, filename="vpn_paid_qr.png")
             await callback.message.answer_photo(
                 photo=qr_file, 
-                caption=f"📱 <b>QR-код для импорта ключа {xui_key.protocol_name}:</b>\nОстальные QR-коды доступны в ЛК."
+                caption="<b>QR-код для быстрого импорта первого ключа вашего тарифа:</b>\nОтсканируйте камерой в v2rayNG / FoXray."
             )
         except Exception as e:
             logger.error(f"Ошибка отправки QR-кода оплаты: {e}")
+
 
 # --- ЛОГИКА ПОЛЬЗОВАТЕЛЬСКОЙ СТАТИСТИКИ ТРАФИКА ---
 @user_router.callback_query(F.data == "menu_stats")
