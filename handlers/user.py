@@ -325,11 +325,20 @@ def get_assets_keyboard(plan_type: str, days: str) -> InlineKeyboardMarkup:
 
 from bot.services.cryptobot import cryptobot_client
 
-# Фиксированные цены в USD
+# Динамическое заполнение цен из .env файла для Callback-запросов (Quality-of-Life)
 PRICES = {
-    "base": {30: 3.0, 90: 8.0, 180: 14.0},     # Базовый тариф (скидки на 3 и 6 месяцев)
-    "premium": {30: 5.0, 90: 13.5, 180: 24.0}  # Премиум тариф
+    "base": {
+        30: config.PRICE_BASE_1_MONTH,
+        90: config.PRICE_BASE_3_MONTHS,
+        180: config.PRICE_BASE_6_MONTHS
+    },
+    "premium": {
+        30: config.PRICE_PREMIUM_1_MONTH,
+        90: config.PRICE_PREMIUM_3_MONTHS,
+        180: config.PRICE_PREMIUM_6_MONTHS
+    }
 }
+
 
 @user_router.callback_query(F.data == "menu_buy")
 async def cb_menu_buy(callback: CallbackQuery):
@@ -369,21 +378,24 @@ async def cb_buy_time(callback: CallbackQuery):
 
 @user_router.callback_query(F.data.startswith("pay_"))
 async def cb_generate_invoice(callback: CallbackQuery, db_user: User):
-    """Генерация счета в CryptoBot"""
+    """Генерация счета в CryptoBot с поддержкой White Label брендирования"""
     parts = callback.data.split("_")
-    plan_type = parts[1]
+    plan_type = parts[1].lower()  # Защита от разницы регистров букв
     days = int(parts[2])
     asset = parts[3]
     
-    price = PRICES[plan_type][days]
+    # Извлекаем динамическую цену из обновленного словаря PRICES
+    price = PRICES.get(plan_type, {}).get(days, 0.0)
     
     await callback.message.edit_text("⏳ <i>Формирую счет на оплату, пожалуйста, подождите...</i>")
     
     # В payload зашиваем ключевую информацию для распознавания платежа: user_id, тип тарифа и дни
     payload = f"{db_user.telegram_id}:{plan_type}:{days}"
-    description = f"Оплата VPN: тариф {plan_type.upper()} на {days} дней"
     
-    # Вызываем наш ранее написанный клиент CryptoBot
+    # WHITE LABEL: Подставляем имя бренда из .env в описание платежного чека Crypto Pay
+    description = f"Оплата подписки {config.BRAND_NAME}: тариф {plan_type.upper()} на {days} дней"
+    
+    # Вызываем клиент CryptoBot
     invoice = await cryptobot_client.create_invoice(
         amount=price,
         asset=asset,
@@ -401,7 +413,7 @@ async def cb_generate_invoice(callback: CallbackQuery, db_user: User):
                 InlineKeyboardButton(text="💸 Оплатить счет", url=invoice_url)
             ],
             [
-                # Кнопка ручной проверки (на случай, если юзер оплатил и вернулся)
+                # Кнопка ручной проверки
                 InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_invoice_{invoice_id}")
             ],
             [
@@ -411,6 +423,7 @@ async def cb_generate_invoice(callback: CallbackQuery, db_user: User):
         
         text = (
             f"🧾 <b>Счет успешно выставлен!</b>\n\n"
+            f"• <b>Сервис:</b> {config.BRAND_NAME}\n"
             f"• <b>Тариф:</b> {plan_type.upper()}\n"
             f"• <b>Срок:</b> {days} дней\n"
             f"• <b>К оплате:</b> <code>{invoice['amount']}</code> {asset}\n\n"
