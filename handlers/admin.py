@@ -314,7 +314,13 @@ from sqlalchemy import select
 
 from bot.config import config
 from bot.database.models import User, SubscriptionType, VPNKey, TariffInbound, ProtocolType
-from bot.states.admin import AdminAddSubscription
+from aiogram.fsm.state import State, StatesGroup
+
+class AdminAddSubscription(StatesGroup):
+    wait_for_user_id = State()     # Ожидание ввода Telegram ID
+    wait_for_plan_type = State()   # Ожидание выбора тарифа (base/premium)
+    wait_for_duration = State()    # Ожидание ввода количества дней
+
 from bot.services.db_api import create_subscription  # Ваша встроенная функция активации в БД
 from bot.services.xui import xui_client
 from bot.services.strongswan import strongswan_client
