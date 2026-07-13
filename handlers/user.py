@@ -525,7 +525,8 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
                             )
                             db_session.add(vpn_key)
                             has_created_any = True
-                            issued_keys_info.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
+                            issued_keys_text.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
+
         except Exception as e:
             logger.error(f"Ошибка мульти-протокольной генерации КУПЛЕННЫХ ключей XUI: {e}")
 
@@ -598,10 +599,10 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
     await callback.message.delete()
     await callback.message.answer(text=success_message, reply_markup=get_main_menu_keyboard(pay_user_id))
 
-    xui_key = next((k for k in sub.keys if k.protocol_category == ProtocolType.XUI), None)
-    if xui_key:
+# Безопасно отправляем QR-код, используя config_link, который мы только что сгенерировали в цикле
+    if config.ENABLE_XUI and 'config_link' in locals() and config_link:
         try:
-            qr_file = create_qr_code_file(xui_key.config_data, filename="vpn_paid_qr.png")
+            qr_file = create_qr_code_file(config_link, filename="vpn_paid_qr.png")
             await callback.message.answer_photo(
                 photo=qr_file, 
                 caption=f"📱 <b>QR-код для импорта ключа {xui_key.protocol_name}:</b>\nОстальные QR-коды доступны в ЛК."
