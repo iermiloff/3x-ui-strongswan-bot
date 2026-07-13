@@ -400,21 +400,31 @@ PRICES = {
 
 @user_router.callback_query(F.data == "menu_buy")
 async def cb_menu_buy(callback: CallbackQuery):
-    """Экран выбора тарифа"""
+    """Экран выбора тарифа с динамическими ценами из .env и защитой от двойных кликов"""
+    currency = getattr(config, "PAYMENT_CURRENCY", "USDT")
+    
     text = (
-        "💎 <b>Покупка подписки VPN</b>\n\n"
-        "Выберите желаемый уровень доступа:\n\n"
-        "🚀 <b>БАЗОВЫЙ (3x-ui):</b>\n"
-        "• Доступ к быстрым обходам блокировок (VLESS/Trojan)\n"
-        "• Работает через сторонние приложения\n"
-        "• От 3$ в месяц\n\n"
-        "💎 <b>PREMIUM (3x-ui + IKEv2):</b>\n"
-        "• Всё, что есть в базовом тарифе\n"
-        "• + Нативный быстрый протокол <b>IKEv2 StrongSwan</b>\n"
-        "• Идеально для iOS/macOS (настройка прямо в системе за 1 минуту без стороннего софта!)\n"
-        "• От 5$ в месяц"
+        f"💎 <b>Покупка подписки {config.BRAND_NAME}</b>\n\n"
+        f"Выберите желаемый уровень доступа:\n\n"
+        f"🚀 <b>БАЗОВЫЙ (3x-ui):</b>\n"
+        f"• Доступ к быстрым обходам блокировок (VLESS/Trojan)\n"
+        f"• Работает через сторонние приложения\n"
+        f"• От {config.PRICE_BASE_1_MONTH} {currency} в месяц\n\n"
+        f"💎 <b>PREMIUM (3x-ui + IKEv2):</b>\n"
+        f"• Всё, что есть в базовом тарифе\n"
+        f"• + Нативный быстрый протокол <b>IKEv2 StrongSwan</b>\n"
+        f"• Идеально для iOS/macOS (настройка в системе без стороннего софта!)\n"
+        f"• От {config.PRICE_PREMIUM_1_MONTH} {currency} в месяц"
     )
-    await callback.message.edit_text(text=text, reply_markup=get_tariffs_keyboard())
+    
+    # Защищаем бот от падения при случайном повторном нажатии на кнопку
+    try:
+        await callback.message.edit_text(text=text, reply_markup=get_tariffs_keyboard())
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            await callback.answer()  # Тихо убираем анимацию часиков на кнопке в Telegram
+        else:
+            raise e
 
 @user_router.callback_query(F.data.startswith("buy_plan_"))
 async def cb_buy_plan(callback: CallbackQuery):
