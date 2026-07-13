@@ -279,12 +279,16 @@ async def cb_show_concrete_instruction(callback: CallbackQuery):
     # Для удобства юзера возвращаем его на экран выбора платформ этого же протокола
     await callback.message.edit_text(text=text, reply_markup=get_platform_keyboard(protocol))
     
+import logging
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.config import config
 
+logger = logging.getLogger(__name__)
+
 def get_tariffs_keyboard() -> InlineKeyboardMarkup:
     """Динамическое меню выбора тарифов с выводом цен из .env файла"""
-    currency = config.PAYMENT_CURRENCY
+    # Вытаскиваем валюту из .env, если её нет — ставим дефолтный USDT
+    currency = getattr(config, "PAYMENT_CURRENCY", "USDT")
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         # --- СЕКЦИЯ ТАРИФА БАЗОВЫЙ ---
@@ -293,18 +297,18 @@ def get_tariffs_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
-                text=f"📆 1 мес. — {config.PRICE_BASE_1_MONTH} {currency}", 
-                callback_data="buy_base_30"
+                text=f"I 1 мес. — {config.PRICE_BASE_1_MONTH} {currency}", 
+                callback_data=f"pay_base_30_{currency}"
             ),
             InlineKeyboardButton(
-                text=f"📆 3 мес. — {config.PRICE_BASE_3_MONTHS} {currency}", 
-                callback_data="buy_base_90"
+                text=f"I 3 мес. — {config.PRICE_BASE_3_MONTHS} {currency}", 
+                callback_data=f"pay_base_90_{currency}"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"📆 6 мес. — {config.PRICE_BASE_6_MONTHS} {currency}", 
-                callback_data="buy_base_180"
+                text=f"I 6 мес. — {config.PRICE_BASE_6_MONTHS} {currency}", 
+                callback_data=f"pay_base_180_{currency}"
             )
         ],
         
@@ -314,27 +318,29 @@ def get_tariffs_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
-                text=f"📆 1 мес. — {config.PRICE_PREMIUM_1_MONTH} {currency}", 
-                callback_data="buy_premium_30"
+                text=f"I 1 мес. — {config.PRICE_PREMIUM_1_MONTH} {currency}", 
+                callback_data=f"pay_premium_30_{currency}"
             ),
             InlineKeyboardButton(
-                text=f"📆 3 мес. — {config.PRICE_PREMIUM_3_MONTHS} {currency}", 
-                callback_data="buy_premium_90"
+                text=f"I 3 мес. — {config.PRICE_PREMIUM_3_MONTHS} {currency}", 
+                callback_data=f"pay_premium_90_{currency}"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"📆 6 мес. — {config.PRICE_PREMIUM_6_MONTHS} {currency}", 
-                callback_data="buy_premium_180"
+                text=f"I 6 мес. — {config.PRICE_PREMIUM_6_MONTHS} {currency}", 
+                callback_data=f"pay_premium_180_{currency}"
             )
         ],
         
         # --- СИСТЕМНЫЕ КНОПКИ ---
         [
-            InlineKeyboardButton(text="⬅️ В главное меню", callback_data="menu_main")
+            # Возврат в главное меню покупки тарифов
+            InlineKeyboardButton(text="⬅️ В главное меню", callback_data="menu_buy")
         ]
     ])
     return keyboard
+
 
 
 def get_periods_keyboard(plan_type: str) -> InlineKeyboardMarkup:
