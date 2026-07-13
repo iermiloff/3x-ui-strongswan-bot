@@ -1,5 +1,5 @@
 import logging
-import asyncssh  # Проверьте импорт библиотеки, которая у вас используется в проекте (async_ssh или paramiko)
+import asyncssh
 from bot.config import config
 
 logger = logging.getLogger(__name__)
@@ -7,14 +7,22 @@ logger = logging.getLogger(__name__)
 class StrongSwanClient:
     def __init__(self):
         self.host = config.SSH_HOST
+        self.port = config.SSH_PORT or 22
         self.user = config.SSH_USER
-        self.password = config.SSH_PASSWORD
+        self.password = config.SSH_PASSWORD  # Работаем по паролю
         self.secrets_path = "/etc/ipsec.secrets"
 
     async def _execute_ssh_cmd(self, command: str) -> bool:
-        """Выполнение быстрой команды на удаленной VPN-ноде по SSH"""
+        """Выполнение быстрой команды на удаленной VPN-ноде по SSH-паролю"""
         try:
-            async with asyncssh.connect(self.host, username=self.user, password=self.password) as conn:
+            # Отключаем строгую проверку known_hosts, чтобы бот не падал при первом коннекте к новому серверу
+            async with asyncssh.connect(
+                self.host, 
+                port=self.port,
+                username=self.user, 
+                password=self.password,
+                known_hosts=None
+            ) as conn:
                 result = await conn.run(command)
                 return result.exit_status == 0
         except Exception as e:
@@ -40,10 +48,8 @@ class StrongSwanClient:
         или убирает решетку обратно с помощью sed.
         """
         if enable:
-            # Убираем решетку комментария
             cmd = f"sudo sed -i 's/^#\\s*{login} :/{login} :/' {self.secrets_path} && sudo ipsec rereadsecrets"
         else:
-            # Ставим решетку комментария (блокируем доступ)
             cmd = f"sudo sed -i 's/^{login} :/# {login} :/' {self.secrets_path} && sudo ipsec rereadsecrets"
             
         return await self._execute_ssh_cmd(cmd)
@@ -56,4 +62,5 @@ class StrongSwanClient:
         return await self._execute_ssh_cmd(cmd)
 
 strongswan_client = StrongSwanClient()
+
 
