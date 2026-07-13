@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     ADMIN_IDS: List[int]
     REQUIRED_CHANNEL_ID: int
 
+     # Настройки брендирования (Quality-of-Life)
+    BRAND_NAME: str = "Overlord VPN"  # Название вашего проекта по умолчанию
+
     # Database
     DB_HOST: str
     DB_PORT: int
