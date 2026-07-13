@@ -1,5 +1,5 @@
 import logging
-import async_ssh  # Проверьте импорт библиотеки, которая у вас используется в проекте (async_ssh или paramiko)
+import asyncssh  # Проверьте импорт библиотеки, которая у вас используется в проекте (async_ssh или paramiko)
 from bot.config import config
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,7 @@ class StrongSwanClient:
     async def _execute_ssh_cmd(self, command: str) -> bool:
         """Выполнение быстрой команды на удаленной VPN-ноде по SSH"""
         try:
-            async with async_ssh.connect(self.host, username=self.user, password=self.password) as conn:
+            async with asyncssh.connect(self.host, username=self.user, password=self.password) as conn:
                 result = await conn.run(command)
                 return result.exit_status == 0
         except Exception as e:
