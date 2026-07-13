@@ -32,6 +32,20 @@ class Settings(BaseSettings):
     SSH_PASSWORD: Optional[str] = None  # ДОБАВЛЕНО: поддержка обычных паролей root
     SSH_KEY_PATH: Optional[str] = None
 
+    # Настройки стоимости тарифов (Quality-of-Life)
+    PAYMENT_CURRENCY: str = "USDT"  # Валюта по умолчанию (USDT, TON, etc.)
+    
+    # Тариф ТЕСТ / БАЗОВЫЙ (XUI: VLESS / Trojan)
+    PRICE_BASE_1_MONTH: float = 1.0
+    PRICE_BASE_3_MONTHS: float = 2.5
+    PRICE_BASE_6_MONTHS: float = 4.5
+    
+    # Тариф PREMIUM (XUI Reality + Нативный Premium IKEv2)
+    PRICE_PREMIUM_1_MONTH: float = 3.0
+    PRICE_PREMIUM_3_MONTHS: float = 7.5
+    PRICE_PREMIUM_6_MONTHS: float = 13.0
+
+
     # CryptoBot
     CRYPTO_BOT_TOKEN: SecretStr
     IS_NET_TEST: bool = True
