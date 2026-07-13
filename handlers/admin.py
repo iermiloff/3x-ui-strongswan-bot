@@ -313,7 +313,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from bot.config import config
-from bot.models import User, SubscriptionType
+from bot.database.models import User, SubscriptionType, VPNKey, TariffInbound, ProtocolType
 from bot.states.admin import AdminAddSubscription
 from bot.services.db_api import create_subscription  # Ваша встроенная функция активации в БД
 from bot.services.xui import xui_client
