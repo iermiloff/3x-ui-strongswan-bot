@@ -6,7 +6,7 @@ from aiogram import Router, Bot, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from aiogram.exceptions import TelegramBadRequest
 from bot.utils.qr import create_qr_code_file
 from bot.services.link_generator import generate_xui_link
 from bot.config import config
@@ -140,11 +140,20 @@ async def cb_menu_trial(callback: CallbackQuery, db_user: User, db_session: Asyn
             "\n\n⚠️ Ссылки закроются автоматически ровно через 24 часа."
         )
         
-        # Удаляем промежуточное сообщение "Генерирую..."
-        await callback.message.delete()
+        # ИСПРАВЛЕНО: Безопасное удаление промежуточного сообщения "Генерирую..."
+        try:
+            await callback.message.delete()
+        except TelegramBadRequest as e:
+            logger.warning(f"Не удалось удалить промежуточное сообщение триала: {e}. Продолжаю отправку ключей.")
+            # Если удалить не получилось (ограничение TG), просто стираем кнопки, чтобы не было повторных кликов
+            try:
+                await callback.message.edit_reply_markup(reply_markup=None)
+            except Exception:
+                pass
         
         # Сначала отправляем полный текст без риска переполнения лимитов картинки
-        await callback.message.answer(text=result_text, reply_markup=get_main_menu_keyboard())
+        await callback.message.answer(text=result_text, reply_markup=get_main_menu_keyboard(db_user.telegram_id))
+
         
         # Если есть хоть одна ссылка 3x-ui, отправляем ОДИН QR-код вторым сообщением
         if config.ENABLE_XUI and config_link:
