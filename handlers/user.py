@@ -497,10 +497,11 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
     stmt_keys = select(VPNKey).where(VPNKey.subscription_id == sub.id)
     existing_keys_res = await db_session.execute(stmt_keys)
     
+    # Вычитываем курсор ровно один раз в список
     all_keys = list(existing_keys_res.scalars().all())
     
-    # Теперь спокойно и безопасно раскладываем ключи по протоколам
-    existing_keys = {k.inbound_id: k for k in all_keys if k.protocol_category == ProtocolType.XUI}
+    # ИСПРАВЛЕНО: Объявляем переменную dictionary строго так, как её просит код XUI ниже!
+    existing_xui_keys = {k.inbound_id: k for k in all_keys if k.protocol_category == ProtocolType.XUI}
     existing_ikev2 = next((k for k in all_keys if k.protocol_category == ProtocolType.IKEV2), None)
 
 
