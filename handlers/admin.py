@@ -329,14 +329,23 @@ from bot.services.strongswan import strongswan_client
 @admin_router.callback_query(F.data == "admin_add_sub")
 async def admin_start_add_sub(callback: CallbackQuery, state: FSMContext):
     """[АДМИН]: Начало процесса ручной выдачи подписки"""
-    # Проверяем, что кликнул именно админ из списка в .env
-    if callback.from_user.id != int(config.ADMIN_IDS):
+    # Безопасно преобразуем ADMIN_IDS в список целых чисел, убирая TypeError
+    if isinstance(config.ADMIN_IDS, list):
+        admin_list = [int(x) for x in config.ADMIN_IDS]
+    elif isinstance(config.ADMIN_IDS, str) and "," in config.ADMIN_IDS:
+        admin_list = [int(x.strip()) for x in config.ADMIN_IDS.split(",")]
+    else:
+        admin_list = [int(config.ADMIN_IDS)]
+
+    # Жесткая и безопасная проверка прав доступа
+    if callback.from_user.id not in admin_list:
         return
         
     await callback.message.edit_text(
         "👤 <b>Шаг 1/3:</b> Введите <b>Telegram ID</b> пользователя, которому нужно выдать или продлить подписку:"
     )
     await state.set_state(AdminAddSubscription.wait_for_user_id)
+
 
 @admin_router.message(AdminAddSubscription.wait_for_user_id)
 async def admin_process_user_id(message: Message, db_session: AsyncSession, state: FSMContext):
