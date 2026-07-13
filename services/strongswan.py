@@ -29,6 +29,43 @@ class StrongSwanClient:
             logger.error(f"Ошибка выполнения удаленной SSH-команды на VPN-ноде: {e}")
             return False
 
+        async def check_connection(self) -> bool:
+        """
+        [СТАРТ]: Проверка первичного SSH-доступа к удаленной VPN-ноде.
+        Возвращает True, если авторизация успешна, иначе логирует точную ошибку.
+        """
+        if not config.ENABLE_STRONGSWAN:
+            logger.info("ℹ️ Интеграция со StrongSwan отключена в конфиге.")
+            return True
+            
+        try:
+            async with asyncssh.connect(
+                self.host, 
+                port=self.port,
+                username=self.user, 
+                password=self.password,
+                known_hosts=None,
+                login_timeout=10.0
+            ) as conn:
+                # Пробуем выполнить легкую тестовую команду, чтобы убедиться в правах root
+                result = await conn.run("id")
+                if result.exit_status == 0:
+                    logger.info(f"✨ [SSH] Успешное подключение к VPN-ноде {self.host}! Доступ авторизован.")
+                    return True
+                else:
+                    logger.error(f"❌ [SSH] Ошибка прав на VPN-ноде: {result.stderr}")
+                    return False
+        except asyncssh.PermissionDenied:
+            logger.error(f"❌ [SSH] КРИТИЧЕСКАЯ ОШИБКА: Отказано в доступе к {self.host}. Неверный SSH_USER или SSH_PASSWORD!")
+            return False
+        except (OSError, ConnectionRefusedError):
+            logger.error(f"❌ [SSH] КРИТИЧЕСКАЯ ОШИБКА: Сервер {self.host} недоступен. Проверьте порт {self.port} или настройки файрвола (UFW)!")
+            return False
+        except Exception as e:
+            logger.error(f"❌ [SSH] Непредвиденная ошибка при проверке связи: {e}")
+            return False
+
+
     async def add_user(self, login: str, password: str) -> bool:
         """
         [ОПЛАТА]: Дописывает пользователя в конец файла secrets 
