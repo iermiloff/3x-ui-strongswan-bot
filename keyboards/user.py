@@ -16,6 +16,9 @@ def get_main_menu_keyboard(user_tg_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="⚙️ Настройка инбаундов 3x-ui", callback_data="adm_xui_inbounds")
             ],
             [
+                InlineKeyboardButton(text="➕ Выдать подписку (Ручной оверрайд)", callback_data="admin_add_sub")
+            ],
+            [
                 InlineKeyboardButton(text="📊 Глобальная статистика СУБД", callback_data="admin_main")
             ]
         ])
