@@ -45,14 +45,14 @@ class XUIClient:
             if inbounds:
                 for ib in inbounds:
                     # Ищем инбаунд, где включен reality
-                    stream_settings = ib.get("streamSettings", {})
+                    stream_settings = ib.get("streamSettings") or {}
                     if isinstance(stream_settings, str):
                         import json
                         try: stream_settings = json.loads(stream_settings)
                         except: stream_settings = {}
                     
                     if stream_settings.get("security") == "reality":
-                        reality_settings = stream_settings.get("realitySettings", {})
+                        reality_settings = stream_settings.get("realitySettings") or {}
                         if isinstance(reality_settings, str):
                             try: reality_settings = json.loads(reality_settings)
                             except: reality_settings = {}
