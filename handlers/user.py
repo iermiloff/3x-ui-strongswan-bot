@@ -486,46 +486,44 @@ async def cb_check_invoice(callback: CallbackQuery, db_session: AsyncSession, st
     existing_ikev2 = next((k for k in existing_keys_res.scalars().all() if k.protocol_category == ProtocolType.IKEV2), None)
 
     # 3. Интеграция с 3x-ui (XUI) для ОПЛАЧЕННЫХ тарифов — МУЛЬТИ-ПРОТОКОЛЬНЫЙ РЕЖИМ
-    if config.ENABLE_XUI:
-        try:
-            # Находим в БД все порты, привязанные к КУПЛЕННОМУ тарифному плану
-            res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == plan_type))
-            active_tariff_inbounds = res.scalars().all()
-            
-            if active_tariff_inbounds:
-                # Собираем все ID портов купленного тарифа в один массив пачки
-                inbound_ids_pack = [ib.inbound_id for ib in active_tariff_inbounds]
-                
-                # Генерируем ОДИН уникальный email на весь оплаченный период
-                email = f"user_{pay_user_id}_{uuid.uuid4().hex[:4]}"
-                
-                # Разово вызываем метод добавления клиента на ВСЕ инбаунды сразу!
-                client_info = await xui_client.add_client(inbound_ids=inbound_ids_pack, email=email)
-                
-                if client_info and isinstance(client_info, dict):
-                    # Запрашиваем полный список портов панели для разбора ключей маскировки
-                    inbounds_list = await xui_client.get_inbounds()
-                    if not inbounds_list:
-                        inbounds_list = []
-                        
-                    # Бежим циклом только для сборки строк конфигураций под этот UUID
-                    for ib in active_tariff_inbounds:
-                        target_inbound = next((inb for inb in inbounds_list if inb.get("id") == ib.inbound_id), None)
-                        
-                        if target_inbound:
-                            config_link = generate_xui_link(target_inbound, client_info["uuid"], email, client_info)
-                            
-                            vpn_key = VPNKey(
-                                subscription_id=sub.id,
-                                protocol_category=ProtocolType.XUI,
-                                protocol_name=ib.protocol_name.upper(),
-                                client_uuid=client_info["uuid"], # UUID строго одинаковый!
-                                inbound_id=ib.inbound_id,
-                                config_data=config_link
-                            )
-                            db_session.add(vpn_key)
-                            has_created_any = True
-                            issued_keys_text.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
+ # 3. Интеграция с 3x-ui (XUI) для ОПЛАЧЕННЫХ тарифов — МУЛЬТИ-ПРОТОКОЛЬНЫЙ РЕЖИМ
+   if config.ENABLE_XUI:
+       try:
+         # Если у пользователя уже есть ключи в базе, просто берём их и не генерируем новые!
+           if existing_keys:
+               for k in existing_keys.values():
+                   issued_keys_text.append(f"🚀 <b>Ключ {k.protocol_name} (Продлен):</b>\n<code>{k.config_data}</code>")
+                 # Сохраняем одну из ссылок в config_link для генерации QR-кода на выходе
+                   config_link = k.config_data
+           else:
+             # Находим в БД все порты, привязанные к КУПЛЕННОМУ тарифному плану, только если ключей нет
+               res = await db_session.execute(select(TariffInbound).where(TariffInbound.plan_type == plan_type))
+               active_tariff_inbounds = res.scalars().all()
+             
+               if active_tariff_inbounds:
+                   inbound_ids_pack = [ib.inbound_id for ib in active_tariff_inbounds]
+                   email = f"user_{pay_user_id}_{uuid.uuid4().hex[:4]}"
+                   client_info = await xui_client.add_client(inbound_ids=inbound_ids_pack, email=email)
+                 
+                   if client_info and isinstance(client_info, dict):
+                       inbounds_list = await xui_client.get_inbounds()
+                       if not inbounds_list:
+                           inbounds_list = []
+                         
+                       for ib in active_tariff_inbounds:
+                           target_inbound = next((inb for inb in inbounds_list if inb.get("id") == ib.inbound_id), None)
+                           if target_inbound:
+                               config_link = generate_xui_link(target_inbound, client_info["uuid"], email, client_info)
+                               vpn_key = VPNKey(
+                                   subscription_id=sub.id,
+                                   protocol_category=ProtocolType.XUI,
+                                   protocol_name=ib.protocol_name.upper(),
+                                   client_uuid=client_info["uuid"],
+                                   inbound_id=ib.inbound_id,
+                                   config_data=config_link
+                               )
+                               db_session.add(vpn_key)
+                               issued_keys_text.append(f"🚀 <b>Ключ {ib.protocol_name.upper()} ({ib.remark}):</b>\n<code>{config_link}</code>")
 
         except Exception as e:
             logger.error(f"Ошибка мульти-протокольной генерации КУПЛЕННЫХ ключей XUI: {e}")
